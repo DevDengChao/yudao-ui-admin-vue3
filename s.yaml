@@ -1,0 +1,24 @@
+# https://github.com/devsapp/fc/blob/main/docs/zh/yaml
+edition: 1.0.0
+name: shorts-console.lian-li.tech
+access: lianli
+services:
+  default:
+    actions:
+      pre-deploy:
+        - plugin: website-fc
+    component: devsapp/fc
+    props:
+      region: cn-shenzhen
+      service:
+        name: www-e2e-test
+      function:
+        name: shorts-console
+        handler: dummy-handler
+        timeout: 6
+        runtime: custom
+        environmentVariables:
+          TZ: Asia/Shanghai
+          NODE_ENV: production
+        instanceConcurrency: 100
+        codeUri: ./dist-test

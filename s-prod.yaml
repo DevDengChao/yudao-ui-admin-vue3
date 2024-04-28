@@ -1,0 +1,10 @@
+# https://github.com/devsapp/fc/blob/main/docs/zh/yaml
+edition: 1.0.0
+extend: ./s.yaml
+services:
+  default:
+    props:
+      service:
+        name: www
+      function:
+        codeUri: ./dist-prod
