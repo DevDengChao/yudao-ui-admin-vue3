@@ -152,7 +152,7 @@
         <template #default="{ row }"> ¥ {{ fenToYuan(row.price) }}</template>
       </el-table-column>
       <el-table-column align="center" label="销量" min-width="90" prop="salesCount" />
-      <el-table-column align="center" label="库存" min-width="90" prop="stock" />
+<!--      <el-table-column align="center" label="库存" min-width="90" prop="stock" />-->
       <el-table-column align="center" label="排序" min-width="70" prop="sort" />
       <el-table-column align="center" label="销售状态" min-width="80">
         <template #default="{ row }">
