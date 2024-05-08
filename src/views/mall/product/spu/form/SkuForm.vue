@@ -11,12 +11,12 @@
         <el-radio :label="true" class="radio">单独设置</el-radio>
       </el-radio-group>
     </el-form-item>
-    <el-form-item label="商品规格" props="specType">
-      <el-radio-group v-model="formData.specType" @change="onChangeSpec" class="w-80">
-        <el-radio :label="false" class="radio">单规格</el-radio>
-        <el-radio :label="true">多规格</el-radio>
-      </el-radio-group>
-    </el-form-item>
+<!--    <el-form-item label="商品规格" props="specType">-->
+<!--      <el-radio-group v-model="formData.specType" @change="onChangeSpec" class="w-80">-->
+<!--        <el-radio :label="false" class="radio">单规格</el-radio>-->
+<!--        <el-radio :label="true">多规格</el-radio>-->
+<!--      </el-radio-group>-->
+<!--    </el-form-item>-->
     <!-- 多规格添加-->
     <el-form-item v-if="!formData.specType">
       <SkuList

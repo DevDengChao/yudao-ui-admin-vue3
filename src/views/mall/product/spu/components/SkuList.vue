@@ -13,22 +13,22 @@
 <!--        <UploadImg v-model="row.picUrl" height="50px" width="50px" />-->
 <!--      </template>-->
 <!--    </el-table-column>-->
-    <template v-if="formData!.specType && !isBatch">
-      <!--  根据商品属性动态添加 -->
-      <el-table-column
-        v-for="(item, index) in tableHeaders"
-        :key="index"
-        :label="item.label"
-        align="center"
-        min-width="120"
-      >
-        <template #default="{ row }">
-          <span style="font-weight: bold; color: #40aaff">
-            {{ row.properties[index]?.valueName }}
-          </span>
-        </template>
-      </el-table-column>
-    </template>
+<!--    <template v-if="formData!.specType && !isBatch">-->
+<!--      &lt;!&ndash;  根据商品属性动态添加 &ndash;&gt;-->
+<!--      <el-table-column-->
+<!--        v-for="(item, index) in tableHeaders"-->
+<!--        :key="index"-->
+<!--        :label="item.label"-->
+<!--        align="center"-->
+<!--        min-width="120"-->
+<!--      >-->
+<!--        <template #default="{ row }">-->
+<!--          <span style="font-weight: bold; color: #40aaff">-->
+<!--            {{ row.properties[index]?.valueName }}-->
+<!--          </span>-->
+<!--        </template>-->
+<!--      </el-table-column>-->
+<!--    </template>-->
 <!--    <el-table-column align="center" label="商品条码" min-width="168">-->
 <!--      <template #default="{ row }">-->
 <!--        <el-input v-model="row.barCode" class="w-100%" />-->
@@ -126,14 +126,14 @@
         </template>
       </el-table-column>
     </template>
-    <el-table-column v-if="formData?.specType" align="center" fixed="right" label="操作" width="80">
-      <template #default="{ row }">
-        <el-button v-if="isBatch" link size="small" type="primary" @click="batchAdd">
-          批量添加
-        </el-button>
-        <el-button v-else link size="small" type="primary" @click="deleteSku(row)">删除</el-button>
-      </template>
-    </el-table-column>
+<!--    <el-table-column v-if="formData?.specType" align="center" fixed="right" label="操作" width="80">-->
+<!--      <template #default="{ row }">-->
+<!--        <el-button v-if="isBatch" link size="small" type="primary" @click="batchAdd">-->
+<!--          批量添加-->
+<!--        </el-button>-->
+<!--        <el-button v-else link size="small" type="primary" @click="deleteSku(row)">删除</el-button>-->
+<!--      </template>-->
+<!--    </el-table-column>-->
   </el-table>
 
   <!-- 情况二：详情 -->
@@ -158,22 +158,22 @@
 <!--        />-->
 <!--      </template>-->
 <!--    </el-table-column>-->
-    <template v-if="formData!.specType && !isBatch">
-      <!--  根据商品属性动态添加 -->
-      <el-table-column
-        v-for="(item, index) in tableHeaders"
-        :key="index"
-        :label="item.label"
-        align="center"
-        min-width="80"
-      >
-        <template #default="{ row }">
-          <span style="font-weight: bold; color: #40aaff">
-            {{ row.properties[index]?.valueName }}
-          </span>
-        </template>
-      </el-table-column>
-    </template>
+<!--    <template v-if="formData!.specType && !isBatch">-->
+<!--      &lt;!&ndash;  根据商品属性动态添加 &ndash;&gt;-->
+<!--      <el-table-column-->
+<!--        v-for="(item, index) in tableHeaders"-->
+<!--        :key="index"-->
+<!--        :label="item.label"-->
+<!--        align="center"-->
+<!--        min-width="80"-->
+<!--      >-->
+<!--        <template #default="{ row }">-->
+<!--          <span style="font-weight: bold; color: #40aaff">-->
+<!--            {{ row.properties[index]?.valueName }}-->
+<!--          </span>-->
+<!--        </template>-->
+<!--      </el-table-column>-->
+<!--    </template>-->
 <!--    <el-table-column align="center" label="商品条码" min-width="100">-->
 <!--      <template #default="{ row }">-->
 <!--        {{ row.barCode }}-->
@@ -238,22 +238,22 @@
         <el-image :src="row.picUrl" class="h-60px w-60px" @click="imagePreview(row.picUrl)" />
       </template>
     </el-table-column>
-    <template v-if="formData!.specType">
-      <!--  根据商品属性动态添加 -->
-      <el-table-column
-        v-for="(item, index) in tableHeaders"
-        :key="index"
-        :label="item.label"
-        align="center"
-        min-width="80"
-      >
-        <template #default="{ row }">
-          <span style="font-weight: bold; color: #40aaff">
-            {{ row.properties[index]?.valueName }}
-          </span>
-        </template>
-      </el-table-column>
-    </template>
+<!--    <template v-if="formData!.specType">-->
+<!--      &lt;!&ndash;  根据商品属性动态添加 &ndash;&gt;-->
+<!--      <el-table-column-->
+<!--        v-for="(item, index) in tableHeaders"-->
+<!--        :key="index"-->
+<!--        :label="item.label"-->
+<!--        align="center"-->
+<!--        min-width="80"-->
+<!--      >-->
+<!--        <template #default="{ row }">-->
+<!--          <span style="font-weight: bold; color: #40aaff">-->
+<!--            {{ row.properties[index]?.valueName }}-->
+<!--          </span>-->
+<!--        </template>-->
+<!--      </el-table-column>-->
+<!--    </template>-->
 <!--    <el-table-column align="center" label="商品条码" min-width="100">-->
 <!--      <template #default="{ row }">-->
 <!--        {{ row.barCode }}-->
@@ -285,9 +285,9 @@
 </template>
 <script lang="ts" setup>
 import { PropType, Ref } from 'vue'
-import { copyValueToTarget } from '@/utils'
+// import { copyValueToTarget } from '@/utils'
 import { propTypes } from '@/utils/propTypes'
-import { UploadImg } from '@/components/UploadFile'
+// import { UploadImg } from '@/components/UploadFile'
 import type { Property, Sku, Spu } from '@/api/mall/product/spu'
 import { createImageViewer } from '@/components/ImageViewer'
 import { RuleConfig } from '@/views/mall/product/spu/components/index'
@@ -339,21 +339,21 @@ const imagePreview = (imgUrl: string) => {
   })
 }
 
-/** 批量添加 */
-const batchAdd = () => {
-  formData.value!.skus!.forEach((item) => {
-    copyValueToTarget(item, skuList.value[0])
-  })
-}
+// /** 批量添加 */
+// const batchAdd = () => {
+//   formData.value!.skus!.forEach((item) => {
+//     copyValueToTarget(item, skuList.value[0])
+//   })
+// }
 
-/** 删除 sku */
-const deleteSku = (row) => {
-  const index = formData.value!.skus!.findIndex(
-    // 直接把列表转成字符串比较
-    (sku) => JSON.stringify(sku.properties) === JSON.stringify(row.properties)
-  )
-  formData.value!.skus!.splice(index, 1)
-}
+// /** 删除 sku */
+// const deleteSku = (row) => {
+//   const index = formData.value!.skus!.findIndex(
+//     // 直接把列表转成字符串比较
+//     (sku) => JSON.stringify(sku.properties) === JSON.stringify(row.properties)
+//   )
+//   formData.value!.skus!.splice(index, 1)
+// }
 const tableHeaders = ref<{ prop: string; label: string }[]>([]) // 多属性表头
 /**
  * 保存时，每个商品规格的表单要校验下。例如说，销售金额最低是 0.01 这种。
