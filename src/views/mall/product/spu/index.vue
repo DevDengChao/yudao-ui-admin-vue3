@@ -132,12 +132,12 @@
       <el-table-column label="商品信息" min-width="300">
         <template #default="{ row }">
           <div class="flex">
-            <el-image
-              fit="cover"
-              :src="row.picUrl"
-              class="flex-none w-50px h-50px"
-              @click="imagePreview(row.picUrl)"
-            />
+<!--            <el-image-->
+<!--              fit="cover"-->
+<!--              :src="row.picUrl"-->
+<!--              class="flex-none w-50px h-50px"-->
+<!--              @click="imagePreview(row.picUrl)"-->
+<!--            />-->
             <div class="ml-4 overflow-hidden">
               <el-tooltip effect="dark" :content="row.name" placement="top">
                 <div>
