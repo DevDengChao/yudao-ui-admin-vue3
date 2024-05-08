@@ -75,30 +75,31 @@
         <el-input-number v-model="row.stock" :min="0" class="w-100%" controls-position="right" />
       </template>
     </el-table-column>
-    <el-table-column align="center" label="重量(kg)" min-width="168">
-      <template #default="{ row }">
-        <el-input-number
-          v-model="row.weight"
-          :min="0"
-          :precision="2"
-          :step="0.1"
-          class="w-100%"
-          controls-position="right"
-        />
-      </template>
-    </el-table-column>
-    <el-table-column align="center" label="体积(m^3)" min-width="168">
-      <template #default="{ row }">
-        <el-input-number
-          v-model="row.volume"
-          :min="0"
-          :precision="2"
-          :step="0.1"
-          class="w-100%"
-          controls-position="right"
-        />
-      </template>
-    </el-table-column>
+
+<!--    <el-table-column align="center" label="重量(kg)" min-width="168">-->
+<!--      <template #default="{ row }">-->
+<!--        <el-input-number-->
+<!--          v-model="row.weight"-->
+<!--          :min="0"-->
+<!--          :precision="2"-->
+<!--          :step="0.1"-->
+<!--          class="w-100%"-->
+<!--          controls-position="right"-->
+<!--        />-->
+<!--      </template>-->
+<!--    </el-table-column>-->
+<!--    <el-table-column align="center" label="体积(m^3)" min-width="168">-->
+<!--      <template #default="{ row }">-->
+<!--        <el-input-number-->
+<!--          v-model="row.volume"-->
+<!--          :min="0"-->
+<!--          :precision="2"-->
+<!--          :step="0.1"-->
+<!--          class="w-100%"-->
+<!--          controls-position="right"-->
+<!--        />-->
+<!--      </template>-->
+<!--    </el-table-column>-->
     <template v-if="formData!.subCommissionType">
       <el-table-column align="center" label="一级返佣(元)" min-width="168">
         <template #default="{ row }">
@@ -198,16 +199,16 @@
         {{ row.stock }}
       </template>
     </el-table-column>
-    <el-table-column align="center" label="重量(kg)" min-width="80">
-      <template #default="{ row }">
-        {{ row.weight }}
-      </template>
-    </el-table-column>
-    <el-table-column align="center" label="体积(m^3)" min-width="80">
-      <template #default="{ row }">
-        {{ row.volume }}
-      </template>
-    </el-table-column>
+<!--    <el-table-column align="center" label="重量(kg)" min-width="80">-->
+<!--      <template #default="{ row }">-->
+<!--        {{ row.weight }}-->
+<!--      </template>-->
+<!--    </el-table-column>-->
+<!--    <el-table-column align="center" label="体积(m^3)" min-width="80">-->
+<!--      <template #default="{ row }">-->
+<!--        {{ row.volume }}-->
+<!--      </template>-->
+<!--    </el-table-column>-->
     <template v-if="formData!.subCommissionType">
       <el-table-column align="center" label="一级返佣(元)" min-width="80">
         <template #default="{ row }">
