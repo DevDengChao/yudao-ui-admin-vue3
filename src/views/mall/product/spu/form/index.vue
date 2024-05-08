@@ -17,14 +17,14 @@
           :propFormData="formData"
         />
       </el-tab-pane>
-      <el-tab-pane label="物流设置" name="delivery">
-        <DeliveryForm
-          ref="deliveryRef"
-          v-model:activeName="activeName"
-          :is-detail="isDetail"
-          :propFormData="formData"
-        />
-      </el-tab-pane>
+<!--      <el-tab-pane label="物流设置" name="delivery">-->
+<!--        <DeliveryForm-->
+<!--          ref="deliveryRef"-->
+<!--          v-model:activeName="activeName"-->
+<!--          :is-detail="isDetail"-->
+<!--          :propFormData="formData"-->
+<!--        />-->
+<!--      </el-tab-pane>-->
       <el-tab-pane label="商品详情" name="description">
         <DescriptionForm
           ref="descriptionRef"
@@ -60,7 +60,7 @@ import InfoForm from './InfoForm.vue'
 import DescriptionForm from './DescriptionForm.vue'
 import OtherForm from './OtherForm.vue'
 import SkuForm from './SkuForm.vue'
-import DeliveryForm from './DeliveryForm.vue'
+// import DeliveryForm from './DeliveryForm.vue'
 import { convertToInteger, floatToFixed2, formatToFraction } from '@/utils'
 
 defineOptions({ name: 'ProductSpuForm' })
@@ -76,7 +76,7 @@ const activeName = ref('info') // Tag 激活的窗口
 const isDetail = ref(false) // 是否查看详情
 const infoRef = ref() // 商品信息 Ref
 const skuRef = ref() // 商品规格 Ref
-const deliveryRef = ref() // 物流设置 Ref
+// const deliveryRef = ref() // 物流设置 Ref
 const descriptionRef = ref() // 商品详情 Ref
 const otherRef = ref() // 其他设置 Ref
 // SPU 表单数据
@@ -153,7 +153,7 @@ const submitForm = async () => {
     // 校验各表单
     await unref(infoRef)?.validate()
     await unref(skuRef)?.validate()
-    await unref(deliveryRef)?.validate()
+    // await unref(deliveryRef)?.validate()
     await unref(descriptionRef)?.validate()
     await unref(otherRef)?.validate()
     // 深拷贝一份, 这样最终 server 端不满足，不需要影响原始数据
