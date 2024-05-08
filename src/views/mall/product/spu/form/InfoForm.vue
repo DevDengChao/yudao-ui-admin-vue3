@@ -24,16 +24,16 @@
         placeholder="请选择商品分类"
       />
     </el-form-item>
-    <el-form-item label="商品品牌" prop="brandId">
-      <el-select v-model="formData.brandId" class="w-80" placeholder="请选择商品品牌">
-        <el-option
-          v-for="item in brandList"
-          :key="item.id"
-          :label="item.name"
-          :value="item.id as number"
-        />
-      </el-select>
-    </el-form-item>
+<!--    <el-form-item label="商品品牌" prop="brandId">-->
+<!--      <el-select v-model="formData.brandId" class="w-80" placeholder="请选择商品品牌">-->
+<!--        <el-option-->
+<!--          v-for="item in brandList"-->
+<!--          :key="item.id"-->
+<!--          :label="item.name"-->
+<!--          :value="item.id as number"-->
+<!--        />-->
+<!--      </el-select>-->
+<!--    </el-form-item>-->
     <el-form-item label="商品关键字" prop="keyword">
       <el-input v-model="formData.keyword" class="w-80!" placeholder="请输入商品关键字" />
     </el-form-item>
