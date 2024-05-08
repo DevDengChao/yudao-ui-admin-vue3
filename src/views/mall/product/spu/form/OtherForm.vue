@@ -17,14 +17,14 @@
         class="w-80!"
       />
     </el-form-item>
-    <el-form-item label="虚拟销量" prop="virtualSalesCount">
-      <el-input-number
-        v-model="formData.virtualSalesCount"
-        :min="0"
-        placeholder="请输入虚拟销量"
-        class="w-80!"
-      />
-    </el-form-item>
+<!--    <el-form-item label="虚拟销量" prop="virtualSalesCount">-->
+<!--      <el-input-number-->
+<!--        v-model="formData.virtualSalesCount"-->
+<!--        :min="0"-->
+<!--        placeholder="请输入虚拟销量"-->
+<!--        class="w-80!"-->
+<!--      />-->
+<!--    </el-form-item>-->
   </el-form>
 </template>
 <script lang="ts" setup>
@@ -56,7 +56,7 @@ const formData = ref<Spu>({
 const rules = reactive({
   sort: [required],
   giveIntegral: [required],
-  virtualSalesCount: [required]
+  // virtualSalesCount: [required]
 })
 
 /** 将传进来的值赋值给 formData */

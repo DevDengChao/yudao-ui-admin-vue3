@@ -109,22 +109,22 @@
                 </el-row>
               </el-col>
             </el-row>
-            <el-row>
-              <el-col :span="24">
-                <el-row>
-                  <el-col :span="8">
-                    <el-form-item label="浏览量:">
-                      <span>{{ row.browseCount }}</span>
-                    </el-form-item>
-                  </el-col>
-                  <el-col :span="8">
-                    <el-form-item label="虚拟销量:">
-                      <span>{{ row.virtualSalesCount }}</span>
-                    </el-form-item>
-                  </el-col>
-                </el-row>
-              </el-col>
-            </el-row>
+<!--            <el-row>-->
+<!--              <el-col :span="24">-->
+<!--                <el-row>-->
+<!--                  <el-col :span="8">-->
+<!--                    <el-form-item label="浏览量:">-->
+<!--                      <span>{{ row.browseCount }}</span>-->
+<!--                    </el-form-item>-->
+<!--                  </el-col>-->
+<!--                  <el-col :span="8">-->
+<!--                    <el-form-item label="虚拟销量:">-->
+<!--                      <span>{{ row.virtualSalesCount }}</span>-->
+<!--                    </el-form-item>-->
+<!--                  </el-col>-->
+<!--                </el-row>-->
+<!--              </el-col>-->
+<!--            </el-row>-->
           </el-form>
         </template>
       </el-table-column>
