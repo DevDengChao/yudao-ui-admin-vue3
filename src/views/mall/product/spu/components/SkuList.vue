@@ -29,11 +29,11 @@
         </template>
       </el-table-column>
     </template>
-    <el-table-column align="center" label="商品条码" min-width="168">
-      <template #default="{ row }">
-        <el-input v-model="row.barCode" class="w-100%" />
-      </template>
-    </el-table-column>
+<!--    <el-table-column align="center" label="商品条码" min-width="168">-->
+<!--      <template #default="{ row }">-->
+<!--        <el-input v-model="row.barCode" class="w-100%" />-->
+<!--      </template>-->
+<!--    </el-table-column>-->
     <el-table-column align="center" label="销售价" min-width="168">
       <template #default="{ row }">
         <el-input-number
@@ -173,11 +173,11 @@
         </template>
       </el-table-column>
     </template>
-    <el-table-column align="center" label="商品条码" min-width="100">
-      <template #default="{ row }">
-        {{ row.barCode }}
-      </template>
-    </el-table-column>
+<!--    <el-table-column align="center" label="商品条码" min-width="100">-->
+<!--      <template #default="{ row }">-->
+<!--        {{ row.barCode }}-->
+<!--      </template>-->
+<!--    </el-table-column>-->
     <el-table-column align="center" label="销售价(元)" min-width="80">
       <template #default="{ row }">
         {{ row.price }}
@@ -253,11 +253,11 @@
         </template>
       </el-table-column>
     </template>
-    <el-table-column align="center" label="商品条码" min-width="100">
-      <template #default="{ row }">
-        {{ row.barCode }}
-      </template>
-    </el-table-column>
+<!--    <el-table-column align="center" label="商品条码" min-width="100">-->
+<!--      <template #default="{ row }">-->
+<!--        {{ row.barCode }}-->
+<!--      </template>-->
+<!--    </el-table-column>-->
     <el-table-column align="center" label="销售价(元)" min-width="80">
       <template #default="{ row }">
         {{ row.price }}
