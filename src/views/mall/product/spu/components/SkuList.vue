@@ -58,18 +58,18 @@
         />
       </template>
     </el-table-column>
-    <el-table-column align="center" label="成本价" min-width="168">
-      <template #default="{ row }">
-        <el-input-number
-          v-model="row.costPrice"
-          :min="0"
-          :precision="2"
-          :step="0.1"
-          class="w-100%"
-          controls-position="right"
-        />
-      </template>
-    </el-table-column>
+<!--    <el-table-column align="center" label="成本价" min-width="168">-->
+<!--      <template #default="{ row }">-->
+<!--        <el-input-number-->
+<!--          v-model="row.costPrice"-->
+<!--          :min="0"-->
+<!--          :precision="2"-->
+<!--          :step="0.1"-->
+<!--          class="w-100%"-->
+<!--          controls-position="right"-->
+<!--        />-->
+<!--      </template>-->
+<!--    </el-table-column>-->
     <el-table-column align="center" label="库存" min-width="168">
       <template #default="{ row }">
         <el-input-number v-model="row.stock" :min="0" class="w-100%" controls-position="right" />
@@ -188,11 +188,11 @@
         {{ row.marketPrice }}
       </template>
     </el-table-column>
-    <el-table-column align="center" label="成本价(元)" min-width="80">
-      <template #default="{ row }">
-        {{ row.costPrice }}
-      </template>
-    </el-table-column>
+<!--    <el-table-column align="center" label="成本价(元)" min-width="80">-->
+<!--      <template #default="{ row }">-->
+<!--        {{ row.costPrice }}-->
+<!--      </template>-->
+<!--    </el-table-column>-->
     <el-table-column align="center" label="库存" min-width="80">
       <template #default="{ row }">
         {{ row.stock }}
@@ -268,11 +268,11 @@
         {{ row.marketPrice }}
       </template>
     </el-table-column>
-    <el-table-column align="center" label="成本价(元)" min-width="80">
-      <template #default="{ row }">
-        {{ row.costPrice }}
-      </template>
-    </el-table-column>
+<!--    <el-table-column align="center" label="成本价(元)" min-width="80">-->
+<!--      <template #default="{ row }">-->
+<!--        {{ row.costPrice }}-->
+<!--      </template>-->
+<!--    </el-table-column>-->
     <el-table-column align="center" label="库存" min-width="80">
       <template #default="{ row }">
         {{ row.stock }}

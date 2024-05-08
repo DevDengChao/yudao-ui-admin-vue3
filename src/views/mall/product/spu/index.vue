@@ -101,11 +101,11 @@
                       <span>{{ fenToYuan(row.marketPrice) }}</span>
                     </el-form-item>
                   </el-col>
-                  <el-col :span="8">
-                    <el-form-item label="成本价:">
-                      <span>{{ fenToYuan(row.costPrice) }}</span>
-                    </el-form-item>
-                  </el-col>
+<!--                  <el-col :span="8">-->
+<!--                    <el-form-item label="成本价:">-->
+<!--                      <span>{{ fenToYuan(row.costPrice) }}</span>-->
+<!--                    </el-form-item>-->
+<!--                  </el-col>-->
                 </el-row>
               </el-col>
             </el-row>
