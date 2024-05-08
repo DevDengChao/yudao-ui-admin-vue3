@@ -258,21 +258,21 @@ const tabsData = ref([
     type: 0,
     count: 0
   },
-  {
-    name: '仓库中',
-    type: 1,
-    count: 0
-  },
-  {
-    name: '已售罄',
-    type: 2,
-    count: 0
-  },
-  {
-    name: '警戒库存',
-    type: 3,
-    count: 0
-  },
+  // {
+  //   name: '仓库中',
+  //   type: 1,
+  //   count: 0
+  // },
+  // {
+  //   name: '已售罄',
+  //   type: 2,
+  //   count: 0
+  // },
+  // {
+  //   name: '警戒库存',
+  //   type: 3,
+  //   count: 0
+  // },
   {
     name: '回收站',
     type: 4,
