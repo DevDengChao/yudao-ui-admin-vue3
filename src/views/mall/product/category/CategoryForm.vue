@@ -60,12 +60,15 @@ const dialogVisible = ref(false) // 弹窗的是否展示
 const dialogTitle = ref('') // 弹窗的标题
 const formLoading = ref(false) // 表单的加载中：1）修改时的数据加载；2）提交的按钮禁用
 const formType = ref('') // 表单的类型：create - 新增；update - 修改
-const formData = ref({
+const DEFAULT_FORM_DATA = {
   id: undefined,
   name: '',
   picUrl: '',
-  status: CommonStatusEnum.ENABLE
-})
+  status: CommonStatusEnum.ENABLE,
+  parentId: undefined,
+  sort: 0,
+};
+const formData = ref(DEFAULT_FORM_DATA)
 const formRules = reactive({
   parentId: [{ required: true, message: '请选择上级分类', trigger: 'blur' }],
   name: [{ required: true, message: '分类名称不能为空', trigger: 'blur' }],
@@ -124,12 +127,7 @@ const submitForm = async () => {
 
 /** 重置表单 */
 const resetForm = () => {
-  formData.value = {
-    id: undefined,
-    name: '',
-    picUrl: '',
-    status: CommonStatusEnum.ENABLE
-  }
+  formData.value = DEFAULT_FORM_DATA;
   formRef.value?.resetFields()
 }
 </script>
