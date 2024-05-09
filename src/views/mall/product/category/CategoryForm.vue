@@ -21,10 +21,10 @@
       <el-form-item label="分类名称" prop="name">
         <el-input v-model="formData.name" placeholder="请输入分类名称" />
       </el-form-item>
-      <el-form-item label="移动端分类图" prop="picUrl">
-        <UploadImg v-model="formData.picUrl" :limit="1" :is-show-tip="false" />
-        <div style="font-size: 10px" class="pl-10px">推荐 180x180 图片分辨率</div>
-      </el-form-item>
+<!--      <el-form-item label="移动端分类图" prop="picUrl">-->
+<!--        <UploadImg v-model="formData.picUrl" :limit="1" :is-show-tip="false" />-->
+<!--        <div style="font-size: 10px" class="pl-10px">推荐 180x180 图片分辨率</div>-->
+<!--      </el-form-item>-->
       <el-form-item label="分类排序" prop="sort">
         <el-input-number v-model="formData.sort" controls-position="right" :min="0" />
       </el-form-item>
