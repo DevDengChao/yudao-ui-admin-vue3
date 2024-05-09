@@ -92,11 +92,11 @@ const formData = reactive<Spu>({
 const rules = reactive({
   name: [required],
   categoryId: [required],
-  keyword: [required],
-  introduction: [required],
-  picUrl: [required],
-  sliderPicUrls: [required],
-  brandId: [required]
+  // keyword: [required],
+  // introduction: [required],
+  // picUrl: [required],
+  // sliderPicUrls: [required],
+  // brandId: [required]
 })
 
 /** 将传进来的值赋值给 formData */
