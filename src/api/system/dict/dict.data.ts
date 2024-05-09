@@ -13,13 +13,19 @@ export type DictDataVO = {
   createTime: Date
 }
 
+export type DictDataPageReqVO = {
+  label?: string
+  dictType?: string
+  status?: number
+}
+
 // 查询字典数据（精简)列表
 export const getSimpleDictDataList = () => {
   return request.get({ url: '/system/dict-data/simple-list' })
 }
 
 // 查询字典数据列表
-export const getDictDataPage = (params: PageParam) => {
+export const getDictDataPage = (params: DictDataPageReqVO & PageParam) => {
   return request.get({ url: '/system/dict-data/page', params })
 }
 

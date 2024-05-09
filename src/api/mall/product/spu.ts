@@ -55,7 +55,7 @@ export interface Spu {
   costPrice?: number // 成本价
   stock?: number // 商品库存
   createTime?: Date // 商品创建时间
-  status?: number // 商品状态
+  status?: string // 商品状态
 }
 
 // 获得 Spu 列表
@@ -71,6 +71,11 @@ export const getTabsCount = () => {
 // 创建商品 Spu
 export const createSpu = (data: Spu) => {
   return request.post({ url: '/product/spu/create', data })
+}
+
+// 复制商品 Spu
+export const copySpu = (id: number) => {
+  return request.post({ url: `/product/spu/copy?id=${id}` })
 }
 
 // 更新商品 Spu
