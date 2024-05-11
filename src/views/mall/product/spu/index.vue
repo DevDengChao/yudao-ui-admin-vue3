@@ -266,11 +266,11 @@ const tabsData = ref([
     type: 0,
     count: 0
   },
-  // {
-  //   name: '仓库中',
-  //   type: 1,
-  //   count: 0
-  // },
+  {
+    name: '仓库中',
+    type: 1,
+    count: 0
+  },
   // {
   //   name: '已售罄',
   //   type: 2,
