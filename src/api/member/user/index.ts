@@ -27,6 +27,11 @@ export const getUserPage = async (params) => {
   return await request.get({ url: `/member/user/page`, params })
 }
 
+// 查询会员用户 CPA 计数列表
+export const getUserCpaPage = async (params) => {
+  return await request.get({ url: `/member/user/cpa/page`, params })
+}
+
 // 查询会员用户详情
 export const getUser = async (id: number) => {
   return await request.get({ url: `/member/user/get?id=` + id })
