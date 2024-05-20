@@ -9,13 +9,21 @@
       label-width="68px"
     >
       <el-form-item label="渠道" prop="channel">
-        <el-input
+        <el-select
           v-model="queryParams.channel"
           class="!w-240px"
           clearable
+          filterable
           placeholder="请输入渠道 ID"
           @keyup.enter="handleQuery"
-        />
+        >
+          <el-option
+            v-for="channel in channels"
+            :key="channel"
+            :value="channel === 'all' ? '' : channel"
+            :label="channel === 'all' ? '全部渠道' : channel"
+          />
+        </el-select>
       </el-form-item>
 
       <el-form-item label="起止时间" prop="from">
@@ -26,7 +34,7 @@
           end-placeholder="结束日期"
           start-placeholder="开始日期"
           type="daterange"
-          value-format="YYYY-MM-DD HH:mm:ss"
+          value-format="YYYY-MM-DD"
         />
       </el-form-item>
 
@@ -78,6 +86,7 @@ defineOptions({ name: 'MemberUserCpa' })
 const loading = ref(true) // 列表的加载中
 const total = ref(0) // 列表的总页数
 const list = ref([]) // 列表的数据
+const channels = ref([]) // 列表的数据
 const defaultDateRange = [new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), new Date()]
 const queryParams = reactive({
   pageNo: 1,
@@ -100,6 +109,10 @@ const getList = async () => {
   }
 }
 
+const getChannels = async () => {
+  channels.value = await UserApi.getUserCpaChannels()
+}
+
 /** 搜索按钮操作 */
 const handleQuery = () => {
   queryParams.pageNo = 1
@@ -119,6 +132,7 @@ const handleSelectionChange = (rows: UserApi.UserVO[]) => {
 
 /** 初始化 **/
 onMounted(() => {
+  getChannels()
   getList()
 })
 </script>
