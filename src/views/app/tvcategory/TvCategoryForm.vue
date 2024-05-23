@@ -7,10 +7,18 @@
       label-width="100px"
       v-loading="formLoading"
     >
-      <el-form-item label="审核状态. -1: 审核未通过, 0: 待审核, 1: 审核中, 2: 审核通过" prop="reviewStatus">
+      <el-form-item label="审核状态" prop="reviewStatus">
         <el-radio-group v-model="formData.reviewStatus">
-          <el-radio label="1">请选择字典生成</el-radio>
+          <el-radio
+            v-for="dict in getIntDictOptions(DICT_TYPE.APP_REVIEW_STATUS)"
+            :key="dict.value"
+            :label="dict.label"
+            :value="dict.value"
+          />
         </el-radio-group>
+      </el-form-item>
+      <el-form-item label="排序" prop="sort">
+        <el-input-number v-model="formData.sort" />
       </el-form-item>
     </el-form>
     <template #footer>
@@ -21,6 +29,7 @@
 </template>
 <script setup lang="ts">
 import { TvCategoryApi, TvCategoryVO } from '@/api/app/tvcategory'
+import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 
 /** 短剧分类 表单 */
 defineOptions({ name: 'TvCategoryForm' })
@@ -35,9 +44,9 @@ const formType = ref('') // 表单的类型：create - 新增；update - 修改
 const formData = ref({
   id: undefined,
   reviewStatus: undefined,
+  sort: undefined
 })
-const formRules = reactive({
-})
+const formRules = reactive({})
 const formRef = ref() // 表单 Ref
 
 /** 打开弹窗 */
@@ -86,7 +95,7 @@ const submitForm = async () => {
 const resetForm = () => {
   formData.value = {
     id: undefined,
-    reviewStatus: undefined,
+    reviewStatus: undefined
   }
   formRef.value?.resetFields()
 }

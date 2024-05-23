@@ -24,29 +24,46 @@
           clearable
           class="!w-240px"
         >
-          <el-option label="请选择字典生成" value="" />
+          <el-option
+            v-for="dict in getBoolDictOptions(DICT_TYPE.DELETED_STATUS)"
+            :key="dict.value as string"
+            :label="dict.label"
+            :value="dict.value"
+          />
         </el-select>
       </el-form-item>
-      <el-form-item label="审核状态. -1: 审核未通过, 0: 待审核, 1: 审核中, 2: 审核通过" prop="reviewStatus">
+      <el-form-item label="审核状态" prop="reviewStatus">
         <el-select
           v-model="queryParams.reviewStatus"
-          placeholder="请选择审核状态. -1: 审核未通过, 0: 待审核, 1: 审核中, 2: 审核通过"
+          placeholder="请选择审核状态."
           clearable
           class="!w-240px"
         >
-          <el-option label="请选择字典生成" value="" />
+          <el-option
+            v-for="dict in getIntDictOptions(DICT_TYPE.APP_REVIEW_STATUS)"
+            :key="dict.value"
+            :label="dict.label"
+            :value="dict.value"
+          />
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button @click="handleQuery"><Icon icon="ep:search" class="mr-5px" /> 搜索</el-button>
-        <el-button @click="resetQuery"><Icon icon="ep:refresh" class="mr-5px" /> 重置</el-button>
+        <el-button @click="handleQuery">
+          <Icon icon="ep:search" class="mr-5px" />
+          搜索
+        </el-button>
+        <el-button @click="resetQuery">
+          <Icon icon="ep:refresh" class="mr-5px" />
+          重置
+        </el-button>
         <el-button
           type="primary"
           plain
           @click="openForm('create')"
           v-hasPermi="['app:tv-category:create']"
         >
-          <Icon icon="ep:plus" class="mr-5px" /> 新增
+          <Icon icon="ep:plus" class="mr-5px" />
+          新增
         </el-button>
         <el-button
           type="success"
@@ -55,7 +72,8 @@
           :loading="exportLoading"
           v-hasPermi="['app:tv-category:export']"
         >
-          <Icon icon="ep:download" class="mr-5px" /> 导出
+          <Icon icon="ep:download" class="mr-5px" />
+          导出
         </el-button>
       </el-form-item>
     </el-form>
@@ -72,8 +90,12 @@
         :formatter="dateFormatter"
         width="180px"
       />
-      <el-table-column label="是否已删除" align="center" prop="deleted" />
-      <el-table-column label="审核状态. -1: 审核未通过, 0: 待审核, 1: 审核中, 2: 审核通过" align="center" prop="reviewStatus" />
+      <el-table-column label="排序" align="center" prop="sort" />
+      <el-table-column label="审核状态" align="center" prop="reviewStatus" >
+        <template #default="scope">
+          {{ getDictLabel(DICT_TYPE.APP_REVIEW_STATUS, scope.row.reviewStatus)}}
+        </template>
+      </el-table-column>
       <el-table-column label="操作" align="center">
         <template #default="scope">
           <el-button
@@ -113,6 +135,7 @@ import { dateFormatter } from '@/utils/formatTime'
 import download from '@/utils/download'
 import { TvCategoryApi, TvCategoryVO } from '@/api/app/tvcategory'
 import TvCategoryForm from './TvCategoryForm.vue'
+import {getBoolDictOptions, getIntDictOptions, DICT_TYPE, getDictLabel} from '@/utils/dict'
 
 /** 短剧分类 列表 */
 defineOptions({ name: 'TvCategory' })
@@ -128,7 +151,7 @@ const queryParams = reactive({
   pageSize: 10,
   id: undefined,
   deleted: undefined,
-  reviewStatus: undefined,
+  reviewStatus: undefined
 })
 const queryFormRef = ref() // 搜索的表单
 const exportLoading = ref(false) // 导出的加载中
