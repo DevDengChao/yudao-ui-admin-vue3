@@ -6,6 +6,8 @@ import {ElementPlusInfoType} from '@/types/elementPlus'
 
 const dictStore = useDictStoreWithOut()
 
+type UNDEFINED_NUMBER = ''
+
 /**
  * 获取 dictType 对应的数据字典数组
  *
@@ -21,7 +23,7 @@ export interface DictDataType {
 }
 
 export interface NumberDictDataType extends DictDataType {
-  value: number
+  value: number | UNDEFINED_NUMBER
 }
 
 export const getDictOptions = (dictType: string) => {
@@ -37,7 +39,7 @@ export const getIntDictOptions = (dictType: string): NumberDictDataType[] => {
   dictOptions.forEach((dict: DictDataType) => {
     dictOption.push({
       ...dict,
-      value: parseInt(dict.value + '')
+      value: dict.value ? parseInt(dict.value + '') : ''
     })
   })
   return dictOption
@@ -103,6 +105,7 @@ export const getDictLabel = (dictType: string, value: any): string => {
 export enum DICT_TYPE {
   USER_TYPE = 'user_type',
   COMMON_STATUS = 'common_status',
+  DELETED_STATUS = 'deleted_status',
   TERMINAL = 'terminal', // 终端
   DATE_INTERVAL = 'date_interval', // 数据间隔
 
@@ -209,5 +212,7 @@ export enum DICT_TYPE {
 
   // ========== ERP - 企业资源计划模块  ==========
   ERP_AUDIT_STATUS = 'erp_audit_status', // ERP 审批状态
-  ERP_STOCK_RECORD_BIZ_TYPE = 'erp_stock_record_biz_type' // 库存明细的业务类型
+  ERP_STOCK_RECORD_BIZ_TYPE = 'erp_stock_record_biz_type', // 库存明细的业务类型
+
+  APP_REVIEW_STATUS = 'review_status'
 }

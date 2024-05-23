@@ -22,14 +22,24 @@
       <el-form-item label="剧集数量" prop="episodeCount">
         <el-input v-model="formData.episodeCount" placeholder="请输入剧集数量" />
       </el-form-item>
-      <el-form-item label="审核状态. -1: 审核未通过, 0: 待审核, 1: 审核中, 2: 审核通过" prop="reviewStatus">
+      <el-form-item label="审核状态." prop="reviewStatus">
         <el-radio-group v-model="formData.reviewStatus">
-          <el-radio label="1">请选择字典生成</el-radio>
+          <el-radio
+            :label="dict.label"
+            :key="dict.value"
+            :value="dict.value"
+            v-for="dict in getIntDictOptions(DICT_TYPE.APP_REVIEW_STATUS)"
+          />
         </el-radio-group>
       </el-form-item>
       <el-form-item label="是否已完结" prop="ended">
         <el-radio-group v-model="formData.ended">
-          <el-radio label="1">请选择字典生成</el-radio>
+          <el-radio
+            :label="dict.label"
+            :key="dict.value as string"
+            :value="dict.value"
+            v-for="dict in getBoolDictOptions(DICT_TYPE.DELETED_STATUS)"
+          />
         </el-radio-group>
       </el-form-item>
       <el-form-item label="导演" prop="director">
@@ -40,11 +50,11 @@
       </el-form-item>
     </el-form>
     <!-- 子表的表单 -->
-    <el-tabs v-model="subTabsName">
-      <el-tab-pane label="短剧剧集" name="tvEpisode">
-        <TvEpisodeForm ref="tvEpisodeFormRef" :serial-id="formData.id" />
-      </el-tab-pane>
-    </el-tabs>
+    <!--    <el-tabs v-model="subTabsName" >-->
+    <!--      <el-tab-pane label="短剧剧集" name="tvEpisode">-->
+    <!--        <TvEpisodeForm ref="tvEpisodeFormRef" :serial-id="formData.id" />-->
+    <!--      </el-tab-pane>-->
+    <!--    </el-tabs>-->
     <template #footer>
       <el-button @click="submitForm" type="primary" :disabled="formLoading">确 定</el-button>
       <el-button @click="dialogVisible = false">取 消</el-button>
@@ -53,7 +63,8 @@
 </template>
 <script setup lang="ts">
 import { TvSerialApi, TvSerialVO } from '@/api/app/tvserial'
-import TvEpisodeForm from './components/TvEpisodeForm.vue'
+import { DICT_TYPE, getBoolDictOptions, getIntDictOptions } from '@/utils/dict'
+// import TvEpisodeForm from './components/TvEpisodeForm.vue'
 
 /** 短剧合集 表单 */
 defineOptions({ name: 'TvSerialForm' })
@@ -75,15 +86,14 @@ const formData = ref({
   reviewStatus: undefined,
   ended: undefined,
   director: undefined,
-  actors: undefined,
+  actors: undefined
 })
-const formRules = reactive({
-})
+const formRules = reactive({})
 const formRef = ref() // 表单 Ref
 
 /** 子表的表单 */
-const subTabsName = ref('tvEpisode')
-const tvEpisodeFormRef = ref()
+// const subTabsName = ref('tvEpisode')
+// const tvEpisodeFormRef = ref()
 
 /** 打开弹窗 */
 const open = async (type: string, id?: number) => {
@@ -109,18 +119,18 @@ const submitForm = async () => {
   // 校验表单
   await formRef.value.validate()
   // 校验子表单
-  try {
-    await tvEpisodeFormRef.value.validate()
-  } catch (e) {
-    subTabsName.value = 'tvEpisode'
-    return
-  }
+  // try {
+  //   await tvEpisodeFormRef.value.validate()
+  // } catch (e) {
+  //   subTabsName.value = 'tvEpisode'
+  //   return
+  // }
   // 提交请求
   formLoading.value = true
   try {
     const data = formData.value as unknown as TvSerialVO
     // 拼接子表的数据
-    data.tvEpisodes = tvEpisodeFormRef.value.getData()
+    // data.tvEpisodes = tvEpisodeFormRef.value.getData()
     if (formType.value === 'create') {
       await TvSerialApi.createTvSerial(data)
       message.success(t('common.createSuccess'))
@@ -148,7 +158,7 @@ const resetForm = () => {
     reviewStatus: undefined,
     ended: undefined,
     director: undefined,
-    actors: undefined,
+    actors: undefined
   }
   formRef.value?.resetFields()
 }

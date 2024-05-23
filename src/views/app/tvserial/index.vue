@@ -28,16 +28,19 @@
           class="!w-240px"
         />
       </el-form-item>
-      <el-form-item label="是否可见" prop="deleted">
+      <el-form-item label="是否删除" prop="deleted">
         <el-select
           v-model="queryParams.deleted"
-          placeholder="请选择是否可见"
+          placeholder="请选择是否删除"
           clearable
           class="!w-240px"
         >
-          <el-option label="全部" value="" />
-          <el-option label="可见" value="false" />
-          <el-option label="隐藏" value="true" />
+          <el-option
+            v-for="dict in getBoolDictOptions(DICT_TYPE.DELETED_STATUS)"
+            :key="dict.value as string"
+            :label="dict.label"
+            :value="dict.value"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="类别" prop="category">
@@ -65,11 +68,12 @@
           clearable
           class="!w-240px"
         >
-          <el-option label="全部" value="" />
-          <el-option label="审核通过" value="2" />
-          <el-option label="审核中" value="1" />
-          <el-option label="待审核" value="0" />
-          <el-option label="审核未通过" value="-1" />
+          <el-option
+            v-for="dict in getIntDictOptions(DICT_TYPE.APP_REVIEW_STATUS)"
+            :key="dict.value"
+            :label="dict.label"
+            :value="dict.value"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="完结状态" prop="ended">
@@ -136,7 +140,7 @@
       />
       <el-table-column label="是否可见" align="center" prop="deleted">
         <template #default="scope">
-            {{ scope.row.deleted ? '隐藏' : '可见' }}
+          {{ scope.row.deleted ? '隐藏' : '可见' }}
         </template>
       </el-table-column>
       <el-table-column label="类别" align="center" prop="category" />
@@ -147,15 +151,17 @@
         </template>
       </el-table-column>
       <el-table-column label="剧集数量" align="center" prop="episodeCount" />
-      <el-table-column label="审核状态." align="center" prop="reviewStatus">
+      <el-table-column label="审核状态" align="center" prop="reviewStatus">
         <template #default="scope">
-          {{ toReviewStatus(scope.row) }}
+          {{ getDictLabel(DICT_TYPE.APP_REVIEW_STATUS, scope.row.reviewStatus) }}
         </template>
       </el-table-column>
       <el-table-column label="是否已完结" align="center" prop="ended" />
-      <el-table-column label="数据源地址" align="center" prop="srcWebUrl" >
+      <el-table-column label="数据源地址" align="center" prop="srcWebUrl">
         <template #default="scope">
-          <el-link v-if="scope.row.srcWebUrl" :href="scope.row.srcWebUrl" target="_blank">{{scope.row.srcSiteName}}</el-link>
+          <el-link v-if="scope.row.srcWebUrl" :href="scope.row.srcWebUrl" target="_blank">
+            {{ scope.row.srcSiteName }}
+          </el-link>
         </template>
       </el-table-column>
       <el-table-column label="操作" align="center">
@@ -197,6 +203,7 @@ import { dateFormatter } from '@/utils/formatTime'
 import download from '@/utils/download'
 import { TvSerialApi, TvSerialVO } from '@/api/app/tvserial'
 import TvSerialForm from './TvSerialForm.vue'
+import { DICT_TYPE, getBoolDictOptions, getDictLabel, getIntDictOptions } from '@/utils/dict'
 
 /** 短剧合集 列表 */
 defineOptions({ name: 'TvSerial' })
@@ -277,21 +284,6 @@ const handleExport = async () => {
   } finally {
     exportLoading.value = false
   }
-}
-
-const toReviewStatus = (row: any) => {
-  let reviewStatus = row.reviewStatus as number
-  switch (reviewStatus) {
-    case 2:
-      return '审核通过'
-    case 1:
-      return '审核中'
-    case 0:
-      return '待审核'
-    case -1:
-      return '审核不通过'
-  }
-  return reviewStatus
 }
 
 /** 初始化 **/
