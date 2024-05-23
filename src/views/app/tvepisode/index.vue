@@ -28,16 +28,6 @@
           class="!w-240px"
         />
       </el-form-item>
-      <el-form-item label="是否已删除" prop="deleted">
-        <el-select
-          v-model="queryParams.deleted"
-          placeholder="请选择是否已删除"
-          clearable
-          class="!w-240px"
-        >
-          <el-option label="请选择字典生成" value="" />
-        </el-select>
-      </el-form-item>
       <el-form-item label="合集 id" prop="serialId">
         <el-input
           v-model="queryParams.serialId"
@@ -56,44 +46,38 @@
           class="!w-240px"
         />
       </el-form-item>
-      <el-form-item label="封面" prop="cover">
-        <el-input
-          v-model="queryParams.cover"
-          placeholder="请输入封面"
-          clearable
-          @keyup.enter="handleQuery"
-          class="!w-240px"
-        />
-      </el-form-item>
-      <el-form-item label="审核状态. -1: 审核未通过, 0: 待审核, 1: 审核中, 2: 审核通过" prop="reviewStatus">
+      <el-form-item label="审核状态" prop="reviewStatus">
         <el-select
           v-model="queryParams.reviewStatus"
-          placeholder="请选择审核状态. -1: 审核未通过, 0: 待审核, 1: 审核中, 2: 审核通过"
+          placeholder="请选择审核状态."
           clearable
           class="!w-240px"
         >
-          <el-option label="请选择字典生成" value="" />
+          <el-option
+            v-for="dict in getIntDictOptions(DICT_TYPE.APP_REVIEW_STATUS)"
+            :key="dict.value"
+            :label="dict.label"
+            :value="dict.value"
+          />
         </el-select>
       </el-form-item>
-      <el-form-item label="视频地址" prop="video">
-        <el-input
-          v-model="queryParams.video"
-          placeholder="请输入视频地址"
-          clearable
-          @keyup.enter="handleQuery"
-          class="!w-240px"
-        />
-      </el-form-item>
       <el-form-item>
-        <el-button @click="handleQuery"><Icon icon="ep:search" class="mr-5px" /> 搜索</el-button>
-        <el-button @click="resetQuery"><Icon icon="ep:refresh" class="mr-5px" /> 重置</el-button>
+        <el-button @click="handleQuery">
+          <Icon icon="ep:search" class="mr-5px" />
+          搜索
+        </el-button>
+        <el-button @click="resetQuery">
+          <Icon icon="ep:refresh" class="mr-5px" />
+          重置
+        </el-button>
         <el-button
           type="primary"
           plain
           @click="openForm('create')"
           v-hasPermi="['app:tv-episode:create']"
         >
-          <Icon icon="ep:plus" class="mr-5px" /> 新增
+          <Icon icon="ep:plus" class="mr-5px" />
+          新增
         </el-button>
         <el-button
           type="success"
@@ -102,7 +86,8 @@
           :loading="exportLoading"
           v-hasPermi="['app:tv-episode:export']"
         >
-          <Icon icon="ep:download" class="mr-5px" /> 导出
+          <Icon icon="ep:download" class="mr-5px" />
+          导出
         </el-button>
       </el-form-item>
     </el-form>
@@ -119,15 +104,16 @@
         :formatter="dateFormatter"
         width="180px"
       />
-      <el-table-column label="是否已删除" align="center" prop="deleted" />
       <el-table-column label="合集 id" align="center" prop="serialId" />
       <el-table-column label="集数" align="center" prop="episode" />
       <el-table-column label="标题" align="center" prop="name" />
       <el-table-column label="封面" align="center" prop="cover" />
-      <el-table-column label="审核状态. -1: 审核未通过, 0: 待审核, 1: 审核中, 2: 审核通过" align="center" prop="reviewStatus" />
+      <el-table-column label="审核状态" align="center" prop="reviewStatus">
+        <template #default="scope">
+          {{ getDictLabel(DICT_TYPE.APP_REVIEW_STATUS, scope.row.reviewStatus) }}
+        </template>
+      </el-table-column>
       <el-table-column label="视频地址" align="center" prop="video" />
-      <el-table-column label="数据源 id" align="center" prop="srcId" />
-      <el-table-column label="数据源网站地址" align="center" prop="srcWebUrl" />
       <el-table-column label="操作" align="center">
         <template #default="scope">
           <el-button
@@ -167,6 +153,7 @@ import { dateFormatter } from '@/utils/formatTime'
 import download from '@/utils/download'
 import { TvEpisodeApi, TvEpisodeVO } from '@/api/app/tvepisode'
 import TvEpisodeForm from './TvEpisodeForm.vue'
+import { DICT_TYPE, getBoolDictOptions, getDictLabel, getIntDictOptions } from '@/utils/dict'
 
 /** 短剧剧集 列表 */
 defineOptions({ name: 'TvEpisode' })
@@ -187,7 +174,7 @@ const queryParams = reactive({
   name: undefined,
   cover: undefined,
   reviewStatus: undefined,
-  video: undefined,
+  video: undefined
 })
 const queryFormRef = ref() // 搜索的表单
 const exportLoading = ref(false) // 导出的加载中

@@ -22,9 +22,14 @@
       <el-form-item label="封面" prop="cover">
         <el-input v-model="formData.cover" placeholder="请输入封面" />
       </el-form-item>
-      <el-form-item label="审核状态. -1: 审核未通过, 0: 待审核, 1: 审核中, 2: 审核通过" prop="reviewStatus">
+      <el-form-item label="审核状态" prop="reviewStatus">
         <el-radio-group v-model="formData.reviewStatus">
-          <el-radio label="1">请选择字典生成</el-radio>
+          <el-radio
+            v-for="dict in getIntDictOptions(DICT_TYPE.APP_REVIEW_STATUS)"
+            :key="dict.value"
+            :label="dict.label"
+            :value="dict.value"
+          />
         </el-radio-group>
       </el-form-item>
       <el-form-item label="视频地址" prop="video">
@@ -39,6 +44,7 @@
 </template>
 <script setup lang="ts">
 import { TvEpisodeApi, TvEpisodeVO } from '@/api/app/tvepisode'
+import {DICT_TYPE, getIntDictOptions} from "@/utils/dict";
 
 /** 短剧剧集 表单 */
 defineOptions({ name: 'TvEpisodeForm' })
