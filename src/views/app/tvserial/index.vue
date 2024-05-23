@@ -28,14 +28,16 @@
           class="!w-240px"
         />
       </el-form-item>
-      <el-form-item label="是否已删除" prop="deleted">
+      <el-form-item label="是否可见" prop="deleted">
         <el-select
           v-model="queryParams.deleted"
-          placeholder="请选择是否已删除"
+          placeholder="请选择是否可见"
           clearable
           class="!w-240px"
         >
-          <el-option label="请选择字典生成" value="" />
+          <el-option label="全部" value="" />
+          <el-option label="可见" value="false" />
+          <el-option label="隐藏" value="true" />
         </el-select>
       </el-form-item>
       <el-form-item label="类别" prop="category">
@@ -56,36 +58,49 @@
           class="!w-240px"
         />
       </el-form-item>
-      <el-form-item label="审核状态. -1: 审核未通过, 0: 待审核, 1: 审核中, 2: 审核通过" prop="reviewStatus">
+      <el-form-item label="审核状态" prop="reviewStatus">
         <el-select
           v-model="queryParams.reviewStatus"
-          placeholder="请选择审核状态. -1: 审核未通过, 0: 待审核, 1: 审核中, 2: 审核通过"
+          placeholder="请选择审核状态."
           clearable
           class="!w-240px"
         >
-          <el-option label="请选择字典生成" value="" />
+          <el-option label="全部" value="" />
+          <el-option label="审核通过" value="2" />
+          <el-option label="审核中" value="1" />
+          <el-option label="待审核" value="0" />
+          <el-option label="审核未通过" value="-1" />
         </el-select>
       </el-form-item>
-      <el-form-item label="是否已完结" prop="ended">
+      <el-form-item label="完结状态" prop="ended">
         <el-select
           v-model="queryParams.ended"
           placeholder="请选择是否已完结"
           clearable
           class="!w-240px"
         >
-          <el-option label="请选择字典生成" value="" />
+          <el-option label="全部" value="" />
+          <el-option label="已完结" value="true" />
+          <el-option label="连载中" value="false" />
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button @click="handleQuery"><Icon icon="ep:search" class="mr-5px" /> 搜索</el-button>
-        <el-button @click="resetQuery"><Icon icon="ep:refresh" class="mr-5px" /> 重置</el-button>
+        <el-button @click="handleQuery">
+          <Icon icon="ep:search" class="mr-5px" />
+          搜索
+        </el-button>
+        <el-button @click="resetQuery">
+          <Icon icon="ep:refresh" class="mr-5px" />
+          重置
+        </el-button>
         <el-button
           type="primary"
           plain
           @click="openForm('create')"
           v-hasPermi="['app:tv-serial:create']"
         >
-          <Icon icon="ep:plus" class="mr-5px" /> 新增
+          <Icon icon="ep:plus" class="mr-5px" />
+          新增
         </el-button>
         <el-button
           type="success"
@@ -94,7 +109,8 @@
           :loading="exportLoading"
           v-hasPermi="['app:tv-serial:export']"
         >
-          <Icon icon="ep:download" class="mr-5px" /> 导出
+          <Icon icon="ep:download" class="mr-5px" />
+          导出
         </el-button>
       </el-form-item>
     </el-form>
@@ -118,18 +134,30 @@
         :formatter="dateFormatter"
         width="180px"
       />
-      <el-table-column label="是否已删除" align="center" prop="deleted" />
+      <el-table-column label="是否可见" align="center" prop="deleted">
+        <template #default="scope">
+            {{ scope.row.deleted ? '隐藏' : '可见' }}
+        </template>
+      </el-table-column>
       <el-table-column label="类别" align="center" prop="category" />
       <el-table-column label="标题" align="center" prop="name" />
-      <el-table-column label="封面" align="center" prop="cover" />
+      <el-table-column label="封面" align="center" prop="cover">
+        <template #default="scope">
+          <el-image :src="scope.row.cover" class="w-80px" />
+        </template>
+      </el-table-column>
       <el-table-column label="剧集数量" align="center" prop="episodeCount" />
-      <el-table-column label="审核状态. -1: 审核未通过, 0: 待审核, 1: 审核中, 2: 审核通过" align="center" prop="reviewStatus" />
+      <el-table-column label="审核状态." align="center" prop="reviewStatus">
+        <template #default="scope">
+          {{ toReviewStatus(scope.row) }}
+        </template>
+      </el-table-column>
       <el-table-column label="是否已完结" align="center" prop="ended" />
-      <el-table-column label="导演" align="center" prop="director" />
-      <el-table-column label="演员" align="center" prop="actors" />
-      <el-table-column label="数据源 id" align="center" prop="srcId" />
-      <el-table-column label="数据源网站地址" align="center" prop="srcWebUrl" />
-      <el-table-column label="数据源网站名称" align="center" prop="srcSiteName" />
+      <el-table-column label="数据源地址" align="center" prop="srcWebUrl" >
+        <template #default="scope">
+          <el-link v-if="scope.row.srcWebUrl" :href="scope.row.srcWebUrl" target="_blank">{{scope.row.srcSiteName}}</el-link>
+        </template>
+      </el-table-column>
       <el-table-column label="操作" align="center">
         <template #default="scope">
           <el-button
@@ -188,7 +216,7 @@ const queryParams = reactive({
   category: undefined,
   name: undefined,
   reviewStatus: undefined,
-  ended: undefined,
+  ended: undefined
 })
 const queryFormRef = ref() // 搜索的表单
 const exportLoading = ref(false) // 导出的加载中
@@ -249,6 +277,21 @@ const handleExport = async () => {
   } finally {
     exportLoading.value = false
   }
+}
+
+const toReviewStatus = (row: any) => {
+  let reviewStatus = row.reviewStatus as number
+  switch (reviewStatus) {
+    case 2:
+      return '审核通过'
+    case 1:
+      return '审核中'
+    case 0:
+      return '待审核'
+    case -1:
+      return '审核不通过'
+  }
+  return reviewStatus
 }
 
 /** 初始化 **/
