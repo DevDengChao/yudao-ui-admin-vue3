@@ -28,24 +28,6 @@
           class="!w-240px"
         />
       </el-form-item>
-      <el-form-item label="CPA 保留系数" prop="cpaRemain">
-        <el-input
-          v-model="queryParams.cpaRemain"
-          placeholder="请输入CPA 保留系数"
-          clearable
-          @keyup.enter="handleQuery"
-          class="!w-240px"
-        />
-      </el-form-item>
-      <el-form-item label="CPA 计数基数" prop="cpaBase">
-        <el-input
-          v-model="queryParams.cpaBase"
-          placeholder="请输入CPA 计数基数"
-          clearable
-          @keyup.enter="handleQuery"
-          class="!w-240px"
-        />
-      </el-form-item>
       <el-form-item>
         <el-button @click="handleQuery"><Icon icon="ep:search" class="mr-5px" /> 搜索</el-button>
         <el-button @click="resetQuery"><Icon icon="ep:refresh" class="mr-5px" /> 重置</el-button>
