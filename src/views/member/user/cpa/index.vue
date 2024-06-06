@@ -61,6 +61,7 @@
       @selection-change="handleSelectionChange"
     >
       <el-table-column align="center" label="日期" prop="date" width="120px" />
+      <el-table-column align="center" label="渠道" prop="channel" width="120px" />
       <el-table-column align="center" label="注册数量" prop="cpaCount" />
       <el-table-column
         align="center"
