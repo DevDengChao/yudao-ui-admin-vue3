@@ -7,6 +7,9 @@
       label-width="100px"
       v-loading="formLoading"
     >
+      <el-form-item label="CPA 渠道" prop="id">
+        <el-input v-model="formData.id" placeholder="请输入CPA 渠道" />
+      </el-form-item>
       <el-form-item label="CPA 保留系数" prop="cpaRemain">
         <el-input v-model="formData.cpaRemain" placeholder="请输入CPA 保留系数" />
       </el-form-item>
@@ -35,10 +38,11 @@ const formLoading = ref(false) // 表单的加载中：1）修改时的数据加
 const formType = ref('') // 表单的类型：create - 新增；update - 修改
 const formData = ref({
   id: undefined,
-  cpaRemain: undefined,
-  cpaBase: undefined,
+  cpaRemain: 10,
+  cpaBase: 10,
 })
 const formRules = reactive({
+  id: [{ required: true, message: 'CPA 渠道不能为空', trigger: 'blur' }],
   cpaRemain: [{ required: true, message: 'CPA 保留系数不能为空', trigger: 'blur' }],
   cpaBase: [{ required: true, message: 'CPA 计数基数不能为空', trigger: 'blur' }],
 })
@@ -90,8 +94,8 @@ const submitForm = async () => {
 const resetForm = () => {
   formData.value = {
     id: undefined,
-    cpaRemain: undefined,
-    cpaBase: undefined,
+    cpaRemain: 10,
+    cpaBase: 10,
   }
   formRef.value?.resetFields()
 }
