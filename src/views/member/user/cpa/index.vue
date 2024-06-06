@@ -88,7 +88,9 @@ const loading = ref(true) // 列表的加载中
 const total = ref(0) // 列表的总页数
 const list = ref([]) // 列表的数据
 const channels = ref<string[]>([]) // 列表的数据
-const defaultDateRange = [new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), new Date()]
+const aDay = 24 * 60 * 60 * 1000
+const now = Date.now()
+const defaultDateRange = [new Date(now - 7 * aDay), new Date(now + aDay)]
 const queryParams = reactive<{
   pageNo: number
   pageSize: number
@@ -117,6 +119,10 @@ const getList = async () => {
 
 const getChannels = async () => {
   channels.value = await UserApi.getUserCpaChannels()
+  autoSelectFirstChannel()
+}
+
+const autoSelectFirstChannel = () => {
   if (!channels.value.length) return
   if (channels.value.includes('all')) {
     queryParams.channel = 'all'
@@ -134,6 +140,7 @@ const handleQuery = () => {
 /** 重置按钮操作 */
 const resetQuery = () => {
   queryFormRef.value.resetFields()
+  autoSelectFirstChannel()
   handleQuery()
 }
 
