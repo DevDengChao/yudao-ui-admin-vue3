@@ -87,9 +87,14 @@ defineOptions({ name: 'MemberUserCpa' })
 const loading = ref(true) // 列表的加载中
 const total = ref(0) // 列表的总页数
 const list = ref([]) // 列表的数据
-const channels = ref([]) // 列表的数据
+const channels = ref<string[]>([]) // 列表的数据
 const defaultDateRange = [new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), new Date()]
-const queryParams = reactive({
+const queryParams = reactive<{
+  pageNo: number
+  pageSize: number
+  channel: string | null
+  createTime: Date[]
+}>({
   pageNo: 1,
   pageSize: 10,
   channel: null,
@@ -112,6 +117,12 @@ const getList = async () => {
 
 const getChannels = async () => {
   channels.value = await UserApi.getUserCpaChannels()
+  if (!channels.value.length) return
+  if (channels.value.includes('all')) {
+    queryParams.channel = 'all'
+  } else {
+    queryParams.channel = channels.value[0]
+  }
 }
 
 /** 搜索按钮操作 */
