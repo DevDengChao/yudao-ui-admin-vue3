@@ -27,7 +27,7 @@
     "lint:lint-staged": "lint-staged -c ",
     "deploy:e2e-test": "s deploy --use-local -y",
     "deploy:prod": "s deploy --use-local -y -t s-prod.yaml",
-    "build-and-deploy:e2e-test": "pnpm run build:e2e-test && pnpm run deploy:e2e-test",
+    "build-and-deploy:e2e-test": "pnpm run build:test && pnpm run deploy:e2e-test",
     "build-and-deploy:prod": "pnpm run build:prod && pnpm run deploy:prod"
   },
   "dependencies": {
