@@ -141,6 +141,7 @@ const handleQuery = () => {
 const resetQuery = () => {
   queryFormRef.value.resetFields()
   autoSelectFirstChannel()
+  queryParams.createTime = defaultDateRange
   handleQuery()
 }
 
