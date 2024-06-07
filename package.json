@@ -8,6 +8,7 @@
     "i": "pnpm install",
     "dev": "vite",
     "dev:test": "vite --mode test",
+    "dev:prod": "vite --mode prod",
     "dev-server": "vite --mode dev",
     "ts:check": "vue-tsc --noEmit",
     "build:local": "node --max_old_space_size=8192 ./node_modules/vite/bin/vite.js build",
