@@ -90,7 +90,7 @@ const list = ref([]) // 列表的数据
 const channels = ref<string[]>([]) // 列表的数据
 const aDay = 24 * 60 * 60 * 1000
 const now = Date.now()
-const defaultDateRange = [new Date(now - 7 * aDay), new Date(now + aDay)]
+const defaultDateRange = [new Date(now - 7 * aDay), new Date(now )]
 const queryParams = reactive<{
   pageNo: number
   pageSize: number
@@ -125,7 +125,7 @@ const getChannels = async () => {
 const autoSelectFirstChannel = () => {
   if (!channels.value.length) return
   if (channels.value.includes('all')) {
-    queryParams.channel = 'all'
+    queryParams.channel = ''
   } else {
     queryParams.channel = channels.value[0]
   }
