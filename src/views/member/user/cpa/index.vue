@@ -90,7 +90,7 @@ const list = ref([]) // 列表的数据
 const channels = ref<string[]>([]) // 列表的数据
 const aDay = 24 * 60 * 60 * 1000
 const now = Date.now()
-const defaultDateRange = [new Date(now - 7 * aDay), new Date(now )]
+const defaultDateRange = [new Date(now - 7 * aDay), new Date(now + aDay)]
 const queryParams = reactive<{
   pageNo: number
   pageSize: number
