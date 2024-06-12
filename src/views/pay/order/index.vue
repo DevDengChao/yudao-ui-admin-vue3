@@ -21,6 +21,15 @@
           <el-option v-for="item in appList" :key="item.id" :label="item.name" :value="item.id" />
         </el-select>
       </el-form-item>
+      <el-form-item label="用户 ID" prop="userId">
+        <el-input
+          v-model="queryParams.userId"
+          placeholder="请输入用户 ID"
+          clearable
+          @keyup.enter="handleQuery"
+          class="!w-240px"
+        />
+      </el-form-item>
       <el-form-item label="支付渠道" prop="channelCode">
         <el-select
           v-model="queryParams.channelCode"
@@ -90,8 +99,14 @@
         />
       </el-form-item>
       <el-form-item>
-        <el-button @click="handleQuery"><Icon icon="ep:search" class="mr-5px" /> 搜索</el-button>
-        <el-button @click="resetQuery"><Icon icon="ep:refresh" class="mr-5px" /> 重置</el-button>
+        <el-button @click="handleQuery">
+          <Icon icon="ep:search" class="mr-5px" />
+          搜索
+        </el-button>
+        <el-button @click="resetQuery">
+          <Icon icon="ep:refresh" class="mr-5px" />
+          重置
+        </el-button>
         <el-button
           type="success"
           plain
@@ -99,7 +114,8 @@
           :loading="exportLoading"
           v-hasPermi="['system:tenant:export']"
         >
-          <Icon icon="ep:download" class="mr-5px" /> 导出
+          <Icon icon="ep:download" class="mr-5px" />
+          导出
         </el-button>
       </el-form-item>
     </el-form>
@@ -116,8 +132,9 @@
         width="180"
         :formatter="dateFormatter"
       />
+      <el-table-column label="用户 ID" align="center" prop="userId" width="100" />
       <el-table-column label="支付金额" align="center" prop="price" width="100">
-        <template #default="scope"> ￥{{ parseFloat(scope.row.price / 100).toFixed(2) }} </template>
+        <template #default="scope"> ￥{{ parseFloat(scope.row.price / 100).toFixed(2) }}</template>
       </el-table-column>
       <el-table-column label="退款金额" align="center" prop="refundPrice" width="100">
         <template #default="scope">
@@ -132,13 +149,16 @@
       <el-table-column label="订单号" align="left" width="300">
         <template #default="scope">
           <p class="order-font">
-            <el-tag size="small"> 商户</el-tag> {{ scope.row.merchantOrderId }}
+            <el-tag size="small"> 商户</el-tag>
+            {{ scope.row.merchantOrderId }}
           </p>
           <p class="order-font" v-if="scope.row.no">
-            <el-tag size="small" type="warning">支付</el-tag> {{ scope.row.no }}
+            <el-tag size="small" type="warning">支付</el-tag>
+            {{ scope.row.no }}
           </p>
           <p class="order-font" v-if="scope.row.channelOrderNo">
-            <el-tag size="small" type="success">渠道</el-tag> {{ scope.row.channelOrderNo }}
+            <el-tag size="small" type="success">渠道</el-tag>
+            {{ scope.row.channelOrderNo }}
           </p>
         </template>
       </el-table-column>
@@ -188,7 +208,6 @@
 </template>
 <script lang="ts" setup>
 import { DICT_TYPE, getIntDictOptions, getStrDictOptions } from '@/utils/dict'
-import { dateFormatter } from '@/utils/formatTime'
 import * as OrderApi from '@/api/pay/order'
 import OrderDetail from './OrderDetail.vue'
 import download from '@/utils/download'
@@ -204,6 +223,7 @@ const queryParams = reactive({
   pageNo: 1,
   pageSize: 10,
   appId: null,
+  userId: null,
   channelCode: null,
   merchantOrderId: null,
   channelOrderNo: null,

@@ -31,6 +31,7 @@ export interface OrderVO {
 export interface OrderPageReqVO extends PageParam {
   merchantId?: number
   appId?: number
+  userId?: number
   channelId?: number
   channelCode?: string
   merchantOrderId?: string
