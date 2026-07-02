@@ -50,7 +50,6 @@
               :limit="10"
               :file-type="APPROVAL_ATTACHMENT_FILE_TYPES"
               :file-size="APPROVAL_ATTACHMENT_FILE_SIZE"
-              directory="bpm/task-attachment"
               :is-show-tip="false"
             />
           </el-form-item>
@@ -106,7 +105,7 @@
       v-if="runningTask && isHandleTaskStatus() && isShowButton(OperationButtonType.REJECT)"
     >
       <template #reference>
-        <el-button class="mr-20px" plain type="danger" @click="openPopover('reject')">
+        <el-button plain type="danger" @click="openPopover('reject')">
           <Icon icon="ep:close" />&nbsp; {{ getButtonDisplayName(OperationButtonType.REJECT) }}
         </el-button>
       </template>
@@ -134,7 +133,6 @@
               :limit="10"
               :file-type="APPROVAL_ATTACHMENT_FILE_TYPES"
               :file-size="APPROVAL_ATTACHMENT_FILE_SIZE"
-              directory="bpm/task-attachment"
               :is-show-tip="false"
             />
           </el-form-item>
@@ -418,7 +416,7 @@
       placement="top-start"
       :width="420"
       trigger="click"
-      v-if="runningTask?.children.length > 0"
+      v-if="runningTask?.children?.length > 0"
     >
       <template #reference>
         <div @click="openPopover('deleteSign')" class="hover-bg-gray-100 rounded-xl p-6px">
