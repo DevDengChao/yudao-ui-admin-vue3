@@ -152,6 +152,49 @@
       </div>
     </el-popover>
 
+    <!-- 【评论】按钮 -->
+    <el-popover
+      :visible="popOverVisible.comment"
+      placement="top-start"
+      :width="420"
+      trigger="click"
+      v-if="runningTask && isHandleTaskStatus()"
+    >
+      <template #reference>
+        <el-button plain type="primary" @click="openPopover('comment')">
+          <Icon icon="ep:chat-line-round" />&nbsp; 评论
+        </el-button>
+      </template>
+      <div class="flex flex-col flex-1 pt-20px px-20px" v-loading="formLoading">
+        <el-form
+          label-position="top"
+          class="mb-auto"
+          ref="commentFormRef"
+          :model="commentForm"
+          :rules="commentFormRule"
+          label-width="100px"
+        >
+          <el-form-item label="评论内容" prop="message">
+            <el-input
+              v-model="commentForm.message"
+              clearable
+              placeholder="请输入评论内容"
+              type="textarea"
+              :rows="4"
+              maxlength="500"
+              show-word-limit
+            />
+          </el-form-item>
+          <el-form-item>
+            <el-button :disabled="formLoading" type="primary" @click="handleComment">
+              提交
+            </el-button>
+            <el-button @click="closePopover('comment', commentFormRef)"> 取消 </el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+    </el-popover>
+
     <!-- 【抄送】按钮 -->
     <el-popover
       :visible="popOverVisible.copy"
@@ -536,6 +579,7 @@
 import { getCurrentUserId } from '@/utils/auth'
 import { setConfAndFields2 } from '@/utils/formCreate'
 import * as TaskApi from '@/api/bpm/task'
+import * as CommentApi from '@/api/bpm/comment'
 import * as ProcessInstanceApi from '@/api/bpm/processInstance'
 import * as UserApi from '@/api/system/user'
 import {
@@ -578,6 +622,7 @@ const popOverVisible = ref({
   addSign: false,
   return: false,
   copy: false,
+  comment: false,
   cancel: false,
   deleteSign: false
 }) // 气泡卡是否展示
@@ -655,6 +700,15 @@ const copyForm = reactive({
 })
 const copyFormRule = reactive<FormRules<typeof copyForm>>({
   copyUserIds: [{ required: true, message: '抄送人不能为空', trigger: 'change' }]
+})
+
+// 评论表单
+const commentFormRef = ref<FormInstance>()
+const commentForm = reactive({
+  message: ''
+})
+const commentFormRule = reactive<FormRules<typeof commentForm>>({
+  message: [{ required: true, message: '评论内容不能为空', trigger: 'blur' }]
 })
 
 // 转办表单
@@ -944,6 +998,30 @@ const handleCopy = async () => {
     copyFormRef.value.resetFields()
     popOverVisible.value.copy = false
     message.success('操作成功')
+  } finally {
+    formLoading.value = false
+  }
+}
+
+/** 处理评论 */
+const handleComment = async () => {
+  formLoading.value = true
+  try {
+    // 1. 校验表单
+    if (!commentFormRef.value) return
+    await commentFormRef.value.validate()
+    const content = commentForm.message.trim()
+    if (!content) {
+      message.warning('评论内容不能为空')
+      return
+    }
+    // 2. 提交评论
+    await CommentApi.createComment(runningTask.value.id, content)
+    commentFormRef.value.resetFields()
+    popOverVisible.value.comment = false
+    message.success('评论成功')
+    // 3. 加载最新数据
+    reload()
   } finally {
     formLoading.value = false
   }
