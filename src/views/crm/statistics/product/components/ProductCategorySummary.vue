@@ -42,23 +42,33 @@ const list = ref<CrmStatisticsProductCategoryRespVO[]>([]) // 列表的数据
 
 /** 饼图配置 */
 const echartsOption = reactive<EChartsOption>({
+  title: {
+    text: '产品分类销量占比',
+    left: 'center',
+    bottom: 10
+  },
   legend: {
-    top: 20
+    type: 'scroll',
+    orient: 'vertical',
+    left: 10,
+    top: 20,
+    bottom: 20
   },
   tooltip: {
-    trigger: 'item'
+    trigger: 'item',
+    formatter: '{b}<br/>销售数量：{c}'
   },
   toolbox: {
     feature: {
-      saveAsImage: { show: true, name: '产品分类销售分析' }
+      saveAsImage: { show: true, name: '产品分类销量占比' }
     }
   },
   series: [
     {
-      name: '销售金额（元）',
+      name: '销售数量',
       type: 'pie',
-      radius: ['35%', '65%'],
-      center: ['50%', '55%'],
+      radius: ['50%', '70%'],
+      center: ['55%', '48%'],
       data: []
     }
   ]
@@ -73,10 +83,15 @@ const loadData = async () => {
     // 2.1 更新列表数据
     list.value = data
     // 2.2 更新 Echarts 数据
+    if (echartsOption.legend) {
+      ;(echartsOption.legend as Record<string, unknown>)['data'] = data.map(
+        (item: CrmStatisticsProductCategoryRespVO) => item.categoryName
+      )
+    }
     if (echartsOption.series) {
       echartsOption.series[0]['data'] = data.map((item: CrmStatisticsProductCategoryRespVO) => ({
         name: item.categoryName,
-        value: item.productTotalPrice
+        value: item.productCount
       }))
     }
   } finally {

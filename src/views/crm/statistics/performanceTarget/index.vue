@@ -156,10 +156,12 @@ const echartsOption = reactive<EChartsOption>({
   grid: {
     left: 20,
     right: 40,
-    bottom: 20,
+    bottom: 72,
     containLabel: true
   },
-  legend: {},
+  legend: {
+    bottom: 8
+  },
   tooltip: {
     trigger: 'axis',
     axisPointer: {
