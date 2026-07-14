@@ -65,6 +65,7 @@ export const StorageKeys = {
 let currentDb: IDBDatabase | null = null
 let currentUserId: number | null = null
 let currentSession = 0
+let stopPromise: Promise<void> | undefined
 
 /** 校验当前 IM IndexedDB session 仍有效 */
 export function isCurrentDbSession(session: number): boolean {
@@ -177,6 +178,9 @@ function openDb(name: string): Promise<IDBDatabase> {
 
 /** 初始化当前用户 IM DB */
 export async function initDb(): Promise<void> {
+  while (stopPromise) {
+    await stopPromise
+  }
   const userId = getCurrentUserId()
   if (!Number.isFinite(userId) || userId <= 0) {
     throw new Error('当前用户不存在，无法初始化 IM DB')
@@ -184,10 +188,17 @@ export async function initDb(): Promise<void> {
   if (currentDb && currentUserId === userId) {
     return
   }
-  currentDb?.close()
-  currentSession++
+  const session = ++currentSession
+  const previousDb = currentDb
+  currentDb = null
   currentUserId = userId
-  currentDb = await openDb(getDbName(userId))
+  previousDb?.close()
+  const nextDb = await openDb(getDbName(userId))
+  if (!isCurrentDbSession(session) || currentUserId !== userId || getCurrentUserId() !== userId) {
+    nextDb.close()
+    throw new Error('IM DB 初始化已失效')
+  }
+  currentDb = nextDb
 }
 
 /** 关闭当前 IM DB 连接 */
@@ -205,9 +216,11 @@ function getRawDb(): IDBDatabase {
   return currentDb
 }
 
-/** 校验单次写入 session */
-function guardSession(session: number) {
-  if (!isCurrentDbSession(session)) {
+/** 校验单次事务仍属于当前用户与 DB session */
+function guardSession(session: number, userId: number) {
+  if (!isCurrentDbSession(session)
+    || currentUserId !== userId
+    || getCurrentUserId() !== userId) {
     throw new Error('IM DB session 已失效')
   }
 }
@@ -352,7 +365,8 @@ class DbClient {
   ): Promise<T> {
     // 开启事务前校验 session
     const session = getDbSession()
-    guardSession(session)
+    const userId = getCurrentUserId()
+    guardSession(session, userId)
     const tx = getRawDb().transaction(storeNames, mode)
     const done = transactionDone(tx)
     let result: T
@@ -368,7 +382,7 @@ class DbClient {
     }
     // commit 后再次校验 session
     await done
-    guardSession(session)
+    guardSession(session, userId)
     return result
   }
 
@@ -500,38 +514,57 @@ export async function setMessageMaxId(
       throw new Error(`未知 IM 会话类型：${conversationType}`)
   }
   const db = getDb()
-  const current = (await db.getSetting<number>(key, tx)) || 0
-  if (maxId > current) {
-    await db.setSetting(key, maxId, tx)
+  const updateMaxId = async (transaction: DbTransaction) => {
+    const current = (await db.getSetting<number>(key, transaction)) || 0
+    if (maxId > current) {
+      await db.setSetting(key, maxId, transaction)
+    }
   }
+  if (tx) {
+    await updateMaxId(tx)
+    return
+  }
+  await db.transaction(['settings'], 'readwrite', updateMaxId)
 }
 
 /** 停止当前 IM DB session */
-export async function stopRequests(): Promise<void> {
-  currentSession++
-  const [
-    { useMessageStoreWithOut },
-    { useConversationStoreWithOut },
-    { useFriendStoreWithOut },
-    { useGroupStoreWithOut },
-    { useChannelStoreWithOut },
-    { useGroupRequestStoreWithOut },
-    { useFaceStoreWithOut }
-  ] = await Promise.all([
-    import('../home/store/messageStore'),
-    import('../home/store/conversationStore'),
-    import('../home/store/friendStore'),
-    import('../home/store/groupStore'),
-    import('../home/store/channelStore'),
-    import('../home/store/groupRequestStore'),
-    import('../home/store/faceStore')
-  ])
-  useMessageStoreWithOut().clear()
-  useConversationStoreWithOut().clear()
-  useFriendStoreWithOut().clear()
-  useGroupStoreWithOut().clear()
-  useChannelStoreWithOut().clear()
-  useGroupRequestStoreWithOut().clear()
-  useFaceStoreWithOut().clear()
+export function stopRequests(): Promise<void> {
+  const session = ++currentSession
   closeDbConnection()
+  const task = (async () => {
+    const [
+      { useMessageStoreWithOut },
+      { useConversationStoreWithOut },
+      { useFriendStoreWithOut },
+      { useGroupStoreWithOut },
+      { useChannelStoreWithOut },
+      { useGroupRequestStoreWithOut },
+      { useFaceStoreWithOut }
+    ] = await Promise.all([
+      import('../home/store/messageStore'),
+      import('../home/store/conversationStore'),
+      import('../home/store/friendStore'),
+      import('../home/store/groupStore'),
+      import('../home/store/channelStore'),
+      import('../home/store/groupRequestStore'),
+      import('../home/store/faceStore')
+    ])
+    if (!isCurrentDbSession(session)) {
+      return
+    }
+    useMessageStoreWithOut().clear()
+    useConversationStoreWithOut().clear()
+    useFriendStoreWithOut().clear()
+    useGroupStoreWithOut().clear()
+    useChannelStoreWithOut().clear()
+    useGroupRequestStoreWithOut().clear()
+    useFaceStoreWithOut().clear()
+  })()
+  const settled = task.finally(() => {
+    if (stopPromise === settled) {
+      stopPromise = undefined
+    }
+  })
+  stopPromise = settled
+  return settled
 }
