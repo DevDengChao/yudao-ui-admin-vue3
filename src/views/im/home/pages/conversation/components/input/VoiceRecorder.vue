@@ -99,6 +99,7 @@ let recordedMimeType = ''
 let recordedExtension = 'webm'
 /** 取消标记：录制中触发 resetAll 时让异步 'stop' 监听器丢弃数据，不进 preview */
 let discarding = false
+let disposed = false
 
 const VOICE_MIME_TYPE_OPTIONS = [
   { mimeType: 'audio/webm;codecs=opus', extension: 'webm' },
@@ -141,7 +142,12 @@ async function startRecord() {
     return
   }
   try {
-    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    if (disposed || !visible.value) {
+      stream.getTracks().forEach((track) => track.stop())
+      return
+    }
+    mediaStream = stream
   } catch (e) {
     message.error('无法获取麦克风权限')
     return
@@ -274,7 +280,10 @@ onMounted(() => {
   }
 })
 
-onBeforeUnmount(resetAll)
+onBeforeUnmount(() => {
+  disposed = true
+  resetAll()
+})
 
 onUnmounted(() => {
   document.removeEventListener('click', handleDocumentClick)

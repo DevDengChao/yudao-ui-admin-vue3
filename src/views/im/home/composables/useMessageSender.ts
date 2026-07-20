@@ -65,6 +65,7 @@ export const useMessageSender = () => {
   const buildLocalMessage = (opts: {
     clientMessageId: string
     content: string
+    senderId: number
     targetId: number
     type: number
     atUserIds?: number[]
@@ -75,7 +76,7 @@ export const useMessageSender = () => {
       content: opts.content,
       status: ImMessageStatus.SENDING,
       sendTime: Date.now(),
-      senderId: getCurrentUserId(),
+      senderId: opts.senderId,
       targetId: opts.targetId,
       selfSend: true,
       atUserIds: opts.atUserIds
@@ -121,6 +122,7 @@ export const useMessageSender = () => {
       const message = buildLocalMessage({
         clientMessageId,
         content,
+        senderId: getCurrentUserId(),
         targetId: realTarget,
         type,
         atUserIds: options?.atUserIds
@@ -301,26 +303,26 @@ export const useMessageSender = () => {
     if (!MESSAGE_PRIVATE_READ_ENABLED) {
       return
     }
-    const cachedMaxReadId = messageStore.getPrivateReadMaxId(peerId)
-    if (cachedMaxReadId !== undefined) {
-      if (cachedMaxReadId > 0) {
-        messageStore.applyMessageReadReceipt({
-          conversationType: ImConversationType.PRIVATE,
-          targetId: peerId,
-          privateReadMaxId: cachedMaxReadId
-        })
-      }
-      return
-    }
     try {
+      const cachedMaxReadId = messageStore.getPrivateReadMaxId(peerId)
+      if (cachedMaxReadId !== undefined) {
+        if (cachedMaxReadId > 0) {
+          await messageStore.applyMessageReadReceipt({
+            conversationType: ImConversationType.PRIVATE,
+            targetId: peerId,
+            privateReadMaxId: cachedMaxReadId
+          })
+        }
+        return
+      }
       // 拉取对方已读到的最大消息 id
       const maxReadId = await apiGetPrivateMaxReadMessageId(peerId)
-      messageStore.updatePrivateReadMaxId(peerId, maxReadId)
       if (!maxReadId) {
+        messageStore.updatePrivateReadMaxId(peerId, maxReadId)
         return
       }
       // applyMessageReadReceipt 内部把 ≤ maxReadId 的本端消息回执更新为 DONE
-      messageStore.applyMessageReadReceipt({
+      await messageStore.applyMessageReadReceipt({
         conversationType: ImConversationType.PRIVATE,
         targetId: peerId,
         privateReadMaxId: maxReadId

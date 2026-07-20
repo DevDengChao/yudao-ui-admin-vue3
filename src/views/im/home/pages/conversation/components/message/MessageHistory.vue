@@ -246,6 +246,7 @@ import dayjs from 'dayjs'
 import { formatHistoryTime } from '@/views/im/utils/time'
 
 import Icon from '@/components/Icon/src/Icon.vue'
+import { useMessage } from '@/hooks/web/useMessage'
 import { useUserStore } from '@/store/modules/user'
 import { getPrivateMessageList as apiGetPrivateMessageList } from '@/api/im/message/private'
 import { getGroupMessageList as apiGetGroupMessageList } from '@/api/im/message/group'
@@ -267,8 +268,7 @@ import {
 import {
   buildFacePreviewText,
   buildRecallTip,
-  buildRecallTipSegments,
-  getConversationKey
+  buildRecallTipSegments
 } from '@/views/im/utils/conversation'
 import { useMessagePuller } from '@/views/im/home/composables/useMessagePuller'
 import { useVoicePlayer } from '@/views/im/home/composables/useVoicePlayer'
@@ -302,6 +302,7 @@ const emit = defineEmits<{
 }>()
 
 const userStore = useUserStore()
+const messageApi = useMessage()
 const conversationStore = useConversationStore()
 const messageStore = useMessageStore()
 const groupStore = useGroupStore()
@@ -558,8 +559,6 @@ async function loadEarlier() {
   if (requestedType !== ImConversationType.PRIVATE && requestedType !== ImConversationType.GROUP) {
     return
   }
-  // 快照当前会话主键：await 期间用户切走 / 关闭面板时丢弃响应，避免旧会话历史被 prepend 到新会话造成串号
-  const requestedKey = getConversationKey(conversation.value)
   const requestedTargetId = conversation.value.targetId
   const requestedIsGroup = requestedType === ImConversationType.GROUP
 
@@ -595,18 +594,23 @@ async function loadEarlier() {
       pageLength = list?.length ?? 0
     }
 
-    // await 期间 active 可能被外部置 null / 换主键：直接丢弃响应；不更新 hasMore（旧会话到顶不代表新会话到顶）也不 prepend
-    if (!conversation.value || getConversationKey(conversation.value) !== requestedKey) {
+    // 合并到 messageStore：prependMessageList 内部去重 + 升序合并 + 落 IndexedDB；
+    // 主聊天面板的 messages 是同一份引用，老消息也会一起出现在主面板里（符合预期）
+    const persisted = await messageStore.prependMessageList(
+      requestedType,
+      requestedTargetId,
+      earlier
+    )
+    if (!persisted) {
       return
     }
-
-    // 返回数量 < limit 视为到顶 —— 关闭"加载更早"按钮，避免后续点击空跑接口
+    // 返回数量 < limit 视为到顶；仅在历史消息成功落库后关闭入口，失败仍允许重试
     if (pageLength < HISTORY_PAGE_SIZE) {
       hasMore.value = false
     }
-    // 合并到 messageStore：prependMessageList 内部去重 + 升序合并 + 落 IndexedDB；
-    // 主聊天面板的 messages 是同一份引用，老消息也会一起出现在主面板里（符合预期）
-    messageStore.prependMessageList(requestedType, requestedTargetId, earlier)
+  } catch (error) {
+    console.warn('[IM MessageHistory] 历史消息加载失败', error)
+    messageApi.warning('历史消息加载失败，请重试')
   } finally {
     loadingMore.value = false
   }
@@ -616,6 +620,7 @@ async function loadEarlier() {
 
 /** 弹窗打开时把上次的 chip / 搜索 / 加载状态都清干净，避免上次的状态残留迷惑 */
 function onDialogOpen() {
+  loadingMore.value = false
   activeFilter.value = null
   keyword.value = ''
   hasMore.value = true
@@ -632,6 +637,7 @@ function onDialogOpen() {
 /** 抽屉关闭时复位 + 停语音 */
 watch(visible, (value) => {
   if (!value) {
+    loadingMore.value = false
     activeFilter.value = null
     keyword.value = ''
     voicePlayer.stop()

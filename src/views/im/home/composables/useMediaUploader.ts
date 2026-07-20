@@ -1,12 +1,10 @@
 import { updateFile } from '@/api/infra/file'
-import { getCurrentUserId } from '@/utils/auth'
 import { useMessage } from '@/hooks/web/useMessage'
 import { isOpenableUrl } from '@/utils/url'
+import { getCurrentUserId } from '@/utils/auth'
 
-import { useConversationStore } from '../store/conversationStore'
 import { useMessageStore } from '../store/messageStore'
 import { useMessageSender } from './useMessageSender'
-import { useMuteOverlay } from './useMuteOverlay'
 import { ImMessageStatus, ImContentType } from '../../utils/constants'
 import {
   MESSAGE_FILE_MAX_MB,
@@ -14,7 +12,6 @@ import {
   MESSAGE_VIDEO_MAX_MB,
   MESSAGE_VOICE_MAX_MB
 } from '../../utils/config'
-import { getConversationKey } from '../../utils/conversation'
 import {
   BLOB_URL_PREFIX,
   generateClientMessageId,
@@ -155,9 +152,7 @@ export function ensureMediaSizeWithinLimit(
 }
 
 export const useMediaUploader = () => {
-  const conversationStore = useConversationStore()
   const messageStore = useMessageStore()
-  const muteOverlay = useMuteOverlay()
   const message = useMessage()
   const { sendRaw } = useMessageSender()
 
@@ -167,13 +162,13 @@ export const useMediaUploader = () => {
    * 用 createObjectURL(file) 生成临时 blob URL 喂给 buildContent；占位 status=SENDING + uploadProgress=0；
    * file 挂在 _localFile 上供失败重试时重走上传
    */
-  const insertMediaPlaceholder = (opts: {
+  const insertMediaPlaceholder = async (opts: {
     file: File
     type: number
     conversation: Conversation
     buildContent: (blobUrl: string) => string
     existingClientMessageId?: string
-  }): { clientMessageId: string; blobUrl: string } => {
+  }): Promise<{ clientMessageId: string; blobUrl: string } | undefined> => {
     const { conversation } = opts
     const blobUrl = URL.createObjectURL(opts.file)
     const clientMessageId = opts.existingClientMessageId || generateClientMessageId()
@@ -198,8 +193,8 @@ export const useMediaUploader = () => {
       uploadProgress: 0,
       _localFile: opts.file
     }
-    void messageStore
-      .insertMessage(
+    try {
+      const inserted = await messageStore.insertMessage(
         {
           type: conversation.type,
           targetId: conversation.targetId,
@@ -208,7 +203,14 @@ export const useMediaUploader = () => {
         },
         placeholder
       )
-      .catch(() => undefined)
+      if (!inserted) {
+        URL.revokeObjectURL(blobUrl)
+        return undefined
+      }
+    } catch (error) {
+      URL.revokeObjectURL(blobUrl)
+      throw error
+    }
     return { clientMessageId, blobUrl }
   }
 
@@ -270,31 +272,6 @@ export const useMediaUploader = () => {
   }
 
   /**
-   * 上传完成后的收口校验：会话仍是占位时锁定的那个 + 当前未被禁言；任一不满足 markMediaFailed + 返回 false
-   *
-   * image / file / voice / video 链路都要在「拿到真实 url 后、调 sendRaw 之前」过一遍这两道
-   */
-  const verifyMediaUploadStillAllowed = (
-    conversation: Conversation,
-    startKey: string,
-    type: number,
-    clientMessageId: string
-  ): boolean => {
-    const activeConversation = conversationStore.activeConversation
-    if (!activeConversation || getConversationKey(activeConversation) !== startKey) {
-      console.warn(`[IM] ${getMediaKind(type)}上传期间切换了会话，放弃发送`, { startKey })
-      markMediaFailed(conversation.type, conversation.targetId, clientMessageId)
-      return false
-    }
-    if (muteOverlay.value) {
-      console.warn(`[IM] ${getMediaKind(type)}上传期间被禁言，放弃发送`, { startKey })
-      markMediaFailed(conversation.type, conversation.targetId, clientMessageId)
-      return false
-    }
-    return true
-  }
-
-  /**
    * 占位完成后用真实 url 替换 content，再走 sendRaw 完成发送
    *
    * 上传成功 → patch content → sendRaw 复用 existingClientMessageId；store 内部 revoke 旧 blob URL
@@ -311,8 +288,7 @@ export const useMediaUploader = () => {
       opts.clientMessageId,
       { content: opts.realContent }
     )
-    // 显式传 conversation 而非依赖 sendRaw 内部取 active：
-    // verifyMediaUploadStillAllowed 与 sendRaw 之间存在微秒窗口，期间用户切会话也能保证发到原会话
+    // 显式传入占位消息所属会话，确保上传完成后仍发送到原会话
     await sendRaw(opts.type, opts.realContent, {
       existingClientMessageId: opts.clientMessageId,
       targetId: opts.conversation.targetId,
@@ -336,19 +312,29 @@ export const useMediaUploader = () => {
     if (!ensureMediaSizeWithinLimit(opts.file, opts.type, message.warning)) {
       return ''
     }
-    const startKey = getConversationKey(conversation)
     const context = opts.context ?? {}
     const buildContent = (url: string): string =>
       serializeMessage(withQuotePayload(handler.build(opts.file, url, context), opts.quote))
 
     // 1. 立即占位
-    const { clientMessageId } = insertMediaPlaceholder({
-      file: opts.file,
-      type: opts.type,
-      conversation,
-      buildContent,
-      existingClientMessageId: opts.existingClientMessageId
-    })
+    let clientMessageId: string
+    try {
+      const placeholder = await insertMediaPlaceholder({
+        file: opts.file,
+        type: opts.type,
+        conversation,
+        buildContent,
+        existingClientMessageId: opts.existingClientMessageId
+      })
+      if (!placeholder) {
+        return ''
+      }
+      clientMessageId = placeholder.clientMessageId
+    } catch (error) {
+      console.error('[IM] 媒体消息占位写入失败', error)
+      message.warning('消息保存失败，请重试')
+      return ''
+    }
 
     // 2. 上传：进度回调 patch uploadProgress；失败保留 _localFile 供重试
     let url: string | undefined
@@ -374,12 +360,7 @@ export const useMediaUploader = () => {
       return clientMessageId
     }
 
-    // 3. 上传期间会话切换 / 用户登出 / 被禁言：任一情况都放弃发送，占位置 FAILED
-    if (!verifyMediaUploadStillAllowed(conversation, startKey, opts.type, clientMessageId)) {
-      return clientMessageId
-    }
-
-    // 4. patch content + sendRaw 收尾
+    // 3. patch content + sendRaw 收尾
     await commitMediaPlaceholder({
       type: opts.type,
       conversation,
@@ -395,7 +376,6 @@ export const useMediaUploader = () => {
     markMediaFailed,
     commitMediaPlaceholder,
     createUploadProgressHandler,
-    verifyMediaUploadStillAllowed,
     getMediaKind,
     requireMediaHandler
   }
