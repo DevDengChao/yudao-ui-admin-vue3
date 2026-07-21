@@ -1,5 +1,4 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { store } from '@/store'
 import { getSimpleChannelList, type ImManagerChannelVO } from '@/api/im/manager/channel'
 import { useConversationStore } from './conversationStore'
 import { ImConversationType } from '../../utils/constants'
@@ -48,10 +47,7 @@ export const useChannelStore = defineStore('imChannelStore', {
     },
 
     /** 保存频道列表 */
-    async saveChannelList(
-      channels: ImManagerChannelVO[],
-      db: DbClient = getDb()
-    ): Promise<void> {
+    async saveChannelList(channels: ImManagerChannelVO[], db: DbClient = getDb()): Promise<void> {
       await db.transaction(['channels'], 'readwrite', async (tx) => {
         await db.clearStore('channels', tx)
         for (const channel of channels) {
@@ -119,5 +115,3 @@ export const useChannelStore = defineStore('imChannelStore', {
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useChannelStore, import.meta.hot))
 }
-
-export const useChannelStoreWithOut = () => useChannelStore(store)

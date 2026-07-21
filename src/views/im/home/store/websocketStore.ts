@@ -1,5 +1,4 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { store } from '@/store'
 import { getCurrentUserId, getRefreshToken } from '@/utils/auth'
 
 import {
@@ -1211,10 +1210,6 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
     }
   }
 })
-
-export const useImWebSocketStoreWithOut = () => {
-  return useImWebSocketStore(store)
-}
 
 // dev: 让 Pinia 的 actions / state 改动支持 HMR，避免每次改 store 都得硬刷
 // 否则 Vite 把新模块推下来后，老 store 实例的 action 闭包仍指向旧函数体

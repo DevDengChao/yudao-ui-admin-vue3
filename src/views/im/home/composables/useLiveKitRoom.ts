@@ -2,7 +2,6 @@ import { computed, ref, shallowRef } from 'vue'
 import {
   Room,
   RoomEvent,
-  ConnectionQuality,
   Track,
   VideoPresets,
   type LocalParticipant,
@@ -40,8 +39,6 @@ export function useLiveKitRoom() {
   const remoteParticipants = shallowRef<RemoteParticipant[]>([])
   /** 连接状态 */
   const isConnected = ref(false)
-  /** 连接质量 */
-  const connectionQuality = ref<ConnectionQuality>(ConnectionQuality.Unknown)
   /** 麦克风开关 */
   const micEnabled = ref(true)
   /** 摄像头开关 */
@@ -130,10 +127,6 @@ export function useLiveKitRoom() {
       // mute / unmute 让 pickStream 的 isMuted 短路重算，video 元素能解绑 srcObject 而不是卡最后一帧
       .on(RoomEvent.TrackMuted, () => isCurrentRoom() && syncRemotes(r))
       .on(RoomEvent.TrackUnmuted, () => isCurrentRoom() && syncRemotes(r))
-      .on(RoomEvent.ConnectionQualityChanged, (quality) => {
-        if (!isCurrentRoom()) return
-        connectionQuality.value = quality
-      })
       // 瞬断 → 显示「重连中」；不关通话窗，由 SDK 内部重连机制恢复
       .on(RoomEvent.Reconnecting, () => {
         if (!isCurrentRoom()) return
@@ -337,7 +330,6 @@ export function useLiveKitRoom() {
       remoteParticipants.value = []
       isConnected.value = false
       reconnecting.value = false
-      connectionQuality.value = ConnectionQuality.Unknown
       micEnabled.value = true
       cameraEnabled.value = false
       speakerEnabled.value = true
@@ -367,7 +359,6 @@ export function useLiveKitRoom() {
     localParticipant,
     remoteParticipants,
     isConnected,
-    connectionQuality,
     micEnabled,
     cameraEnabled,
     speakerEnabled,
@@ -386,5 +377,3 @@ export function useLiveKitRoom() {
     onParticipantDisconnected
   }
 }
-
-export type ImLiveKitRoom = ReturnType<typeof useLiveKitRoom>

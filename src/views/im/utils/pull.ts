@@ -9,7 +9,7 @@ import type { DbClient } from './db'
  */
 
 /** 增量拉取游标：上次拉到的位置 */
-export interface PullCursor {
+interface PullCursor {
   lastUpdateTime?: number
   lastId?: number
 }
@@ -30,7 +30,7 @@ const PULL_OVERLAP_MS = 5000
 const MIN_ID_PULL_MAX_PAGES = 1000
 
 /** 读取某模块的拉取游标；无则返回空游标（首次拉全量） */
-export async function getPullCursor(db: DbClient, key: string): Promise<PullCursor> {
+async function getPullCursor(db: DbClient, key: string): Promise<PullCursor> {
   return (await db.getSetting<PullCursor>(key)) ?? {}
 }
 

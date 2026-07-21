@@ -62,7 +62,7 @@ export const tipMention = (userId: number, text: string): TipSegment => ({
   text
 })
 
-export const tipLink = (href: string, text: string): TipSegment => ({
+const tipLink = (href: string, text: string): TipSegment => ({
   type: 'link',
   href,
   text
@@ -72,7 +72,7 @@ export const segmentsToText = (segments: TipSegment[]): string =>
   segments.map((s) => s.text).join('')
 
 /** 多个 userId 用同一个分隔符插值成 segments，每个 user 单独成 mention 段 */
-export function joinMentionSegments(
+function joinMentionSegments(
   userIds: number[],
   separator: string,
   resolveName: (userId: number) => string
@@ -418,7 +418,7 @@ function mapMessageToMergeItem(
 }
 
 /** 合并转发标题：私聊「{对方} 和 {自己} 的聊天记录」；群聊「{群名} 的聊天记录」 */
-export function buildMergeTitle(conversation: Conversation): string {
+function buildMergeTitle(conversation: Conversation): string {
   if (conversation.type === ImConversationType.GROUP) {
     return `${conversation.name || '群聊'} 的聊天记录`
   }
@@ -955,15 +955,6 @@ export function resolveRtcCallPrivateBubbleText(payload: RtcCallEndPayload | nul
     default:
       return hasDuration ? `通话时长 ${formatCallDuration(duration)}` : '通话已结束'
   }
-}
-
-/** 会话内通话事件文案 */
-export function resolveRtcCallTipText(message: {
-  type?: number
-  content?: string
-  selfSend?: boolean
-}): string {
-  return segmentsToText(resolveRtcCallTipSegments(message))
 }
 
 /**

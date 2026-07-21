@@ -23,7 +23,6 @@ import { ImContentType, ImMessageStatus, ImConversationType } from '../../utils/
 import { MESSAGE_PRIVATE_READ_ENABLED, MESSAGE_GROUP_READ_ENABLED } from '../../utils/config'
 import { getClientConversationId, getDb, type DbClient } from '../../utils/db'
 import type { Conversation, Message, MessageDO } from '../types'
-import { getCurrentUserId } from '@/utils/auth'
 
 /** 非文本消息的扩展选项（通用） */
 interface SendExtOptions {
@@ -129,7 +128,7 @@ export const useMessageSender = () => {
       const message = buildLocalMessage({
         clientMessageId,
         content,
-        senderId: getCurrentUserId(),
+        senderId: db.userId,
         targetId: realTarget,
         type,
         atUserIds: options?.atUserIds

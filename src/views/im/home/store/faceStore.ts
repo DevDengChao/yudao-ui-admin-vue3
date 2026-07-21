@@ -1,6 +1,5 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
 import { ref } from 'vue'
-import { store } from '@/store'
 
 import { getFacePackList as apiGetFacePackList, type ImFacePackUserVO } from '@/api/im/face/pack'
 import {
@@ -109,9 +108,6 @@ export const useFaceStore = defineStore('imFace', () => {
     clear
   }
 })
-
-/** 在 setup 外（路由守卫等）取 store 实例的工具方法 */
-export const useFaceStoreWithOut = () => useFaceStore(store)
 
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useFaceStore, import.meta.hot))

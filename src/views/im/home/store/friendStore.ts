@@ -1,5 +1,4 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { store } from '@/store'
 
 import { CommonStatusEnum } from '@/utils/constants'
 import {
@@ -44,10 +43,8 @@ function queueFriendListRefreshAfterPending(fetch: () => Promise<unknown>): void
   }
 }
 
-/** 当前正在进行的好友申请列表拉取；多端连续多条申请到达时复用同一 Promise，避免雪崩重拉 */
-let pendingFetchRequests: Promise<void> | null = null
-/** 当前正在进行的「加载更多申请」请求 */
-let pendingLoadMoreRequests: Promise<void> | null = null
+/** 当前好友申请分页任务；首页和加载更多互斥执行 */
+let requestTask: Promise<void> | null = null
 /** 当前正在进行的好友详情请求 */
 const pendingFetchFriendInfos = new Map<number, Promise<void>>()
 
@@ -129,12 +126,6 @@ export const useFriendStore = defineStore('imFriendStore', {
         const entry = this.getFriend(friendUserId)
         return !!entry && entry.status !== CommonStatusEnum.DISABLE
       }
-    },
-    /** 我的黑名单（blocked=true 且 ENABLE） */
-    getBlockedFriendList: (state): Friend[] => {
-      return state.friends.filter(
-        (friend) => friend.status !== CommonStatusEnum.DISABLE && friend.blocked === true
-      )
     },
     /** 未处理申请数（接收方=我）—— 实时派生，「新的朋友」红点用 */
     getUnhandledRequestCount: (state): number => {
@@ -334,7 +325,12 @@ export const useFriendStore = defineStore('imFriendStore', {
     async refuseFriendRequest(requestId: number, handleContent?: string) {
       const db = await initDb()
       await apiRefuseFriendRequest(requestId, handleContent)
-      await this.applyHandleResult(requestId, ImFriendRequestHandleResult.REFUSED, handleContent, db)
+      await this.applyHandleResult(
+        requestId,
+        ImFriendRequestHandleResult.REFUSED,
+        handleContent,
+        db
+      )
     },
 
     /** 把 handleResult 应用到本地申请记录；找不到就按 id 单查兜底 upsert，避免破坏 id 倒序 */
@@ -357,10 +353,10 @@ export const useFriendStore = defineStore('imFriendStore', {
       await this.fetchFriendRequest(requestId, db)
     },
 
-    /** 拉取「我相关」的好友申请列表首页（页面打开 / 收到 FRIEND_REQUEST_RECEIVED 时刷新）；pending 期间复用同一 Promise */
+    /** 拉取「我相关」的好友申请列表首页；pending 期间复用同一 Promise */
     async fetchFriendRequestList() {
-      if (pendingFetchRequests) {
-        return pendingFetchRequests
+      if (requestTask) {
+        return requestTask
       }
       const promise = (async () => {
         const db = await initDb()
@@ -371,21 +367,21 @@ export const useFriendStore = defineStore('imFriendStore', {
         this.hasMoreFriendRequests = items.length >= FRIEND_REQUEST_PAGE_SIZE
         this.saveFriendRequestList(undefined, db)
       })().finally(() => {
-        if (pendingFetchRequests === promise) {
-          pendingFetchRequests = null
+        if (requestTask === promise) {
+          requestTask = null
         }
       })
-      pendingFetchRequests = promise
+      requestTask = promise
       return promise
     },
 
     /** 加载更多申请（按本地最旧 requestId 游标分页）；无更多 / pending 中直接返回 */
     async loadMoreFriendRequestList() {
-      if (!this.hasMoreFriendRequests || pendingFetchRequests) {
+      if (!this.hasMoreFriendRequests) {
         return
       }
-      if (pendingLoadMoreRequests) {
-        return pendingLoadMoreRequests
+      if (requestTask) {
+        return requestTask
       }
       const oldest = this.friendRequests[this.friendRequests.length - 1]
       if (!oldest) {
@@ -401,11 +397,11 @@ export const useFriendStore = defineStore('imFriendStore', {
         this.hasMoreFriendRequests = items.length >= FRIEND_REQUEST_PAGE_SIZE
         this.saveFriendRequestList(undefined, db)
       })().finally(() => {
-        if (pendingLoadMoreRequests === promise) {
-          pendingLoadMoreRequests = null
+        if (requestTask === promise) {
+          requestTask = null
         }
       })
-      pendingLoadMoreRequests = promise
+      requestTask = promise
       return promise
     },
 
@@ -423,18 +419,8 @@ export const useFriendStore = defineStore('imFriendStore', {
       await this.upsertFriendRequestForPull(convertFriendRequest(data), db)
     },
 
-    /** 合并单条好友申请：已有则按 id 覆盖；新记录按 id 倒序插入（比本地最旧还老则跳过，留给 loadMore 带回） */
-    upsertFriendRequest(next: FriendRequest) {
-      void this.upsertFriendRequestForPull(next).catch((e) =>
-        console.warn('[IM friendStore] 本地好友申请写入失败', e)
-      )
-    },
-
     /** 合并单条好友申请 */
-    async upsertFriendRequestForPull(
-      next: FriendRequest,
-      db: DbClient = getDb()
-    ): Promise<void> {
+    async upsertFriendRequestForPull(next: FriendRequest, db: DbClient = getDb()): Promise<void> {
       const existing = this.getFriendRequest(next.id)
       if (existing) {
         Object.assign(existing, next)
@@ -495,17 +481,6 @@ export const useFriendStore = defineStore('imFriendStore', {
           { silent },
           db
         )
-        this.saveFriend(friend, db)
-      }
-    },
-
-    /** 切换联系人置顶 */
-    async setFriendPinned(friendUserId: number, pinned: boolean) {
-      const db = await initDb()
-      await apiUpdateFriend({ friendUserId, pinned })
-      const friend = this.getFriend(friendUserId)
-      if (friend) {
-        friend.pinned = pinned
         this.saveFriend(friend, db)
       }
     },
@@ -742,8 +717,7 @@ export const useFriendStore = defineStore('imFriendStore', {
       this.friendRequests = []
       this.loaded = false
       this.hasMoreFriendRequests = true
-      pendingFetchRequests = null
-      pendingLoadMoreRequests = null
+      requestTask = null
       pendingFetchFriendInfos.clear()
     }
   }
@@ -785,8 +759,6 @@ function convertFriendRequest(vo: ImFriendRequestRespVO): FriendRequest {
     toAvatar: vo.toAvatar
   }
 }
-
-export const useFriendStoreWithOut = () => useFriendStore(store)
 
 // dev: 让 Pinia 的 actions / state 改动支持 HMR，避免每次改 store 都得硬刷
 if (import.meta.hot) {

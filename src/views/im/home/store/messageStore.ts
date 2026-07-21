@@ -1,5 +1,4 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
-import { store } from '@/store'
 
 import {
   IM_AT_ALL_USER_ID,
@@ -1533,7 +1532,11 @@ export const useMessageStore = defineStore('imMessageStore', {
           storedMessage?.readCount === undefined &&
           options.readCount === undefined
             ? undefined
-            : Math.max(message?.readCount ?? 0, storedMessage?.readCount ?? 0, options.readCount ?? 0)
+            : Math.max(
+                message?.readCount ?? 0,
+                storedMessage?.readCount ?? 0,
+                options.readCount ?? 0
+              )
         const nextReceiptStatus =
           message?.receiptStatus === undefined &&
           storedMessage?.receiptStatus === undefined &&
@@ -1720,18 +1723,6 @@ export const useMessageStore = defineStore('imMessageStore', {
       conversationStore.publishConversationProjection(nextConversation, true)
     },
 
-    /** 删除会话全部消息 */
-    async deleteConversationMessageList(
-      conversationType: number,
-      targetId: number,
-      db: DbClient = getDb()
-    ) {
-      const clientConversationId = getClientConversationId(conversationType, targetId)
-      await enqueueConversationWrite(clientConversationId, () =>
-        this.deleteConversationMessageListNow(conversationType, targetId, db)
-      )
-    },
-
     /** 实际清空会话消息；调用方必须持有当前会话写 lane */
     async deleteConversationMessageListNow(
       conversationType: number,
@@ -1786,8 +1777,6 @@ export const useMessageStore = defineStore('imMessageStore', {
     }
   }
 })
-
-export const useMessageStoreWithOut = () => useMessageStore(store)
 
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useMessageStore, import.meta.hot))

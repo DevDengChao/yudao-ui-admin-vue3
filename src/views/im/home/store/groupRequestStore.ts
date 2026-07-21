@@ -1,5 +1,4 @@
 import { defineStore, acceptHMRUpdate } from 'pinia'
-import { store } from '@/store'
 
 import {
   agreeGroupRequest as apiAgreeGroupRequest,
@@ -12,9 +11,12 @@ import {
 import { ImGroupRequestHandleResult } from '@/views/im/utils/constants'
 import { getDb, initDb, StorageKeys, type DbClient } from '../../utils/db'
 import { runIncrementalPull } from '../../utils/pull'
+import {
+  ResourceRequestKey,
+  ResourceRequestMode,
+  runResourceRequest
+} from '../../utils/resourceRequest'
 import type { GroupRequestDO } from '../types'
-
-let pendingUnhandledFetch: Promise<void> | null = null
 
 /**
  * IM 加群申请 Store
@@ -32,9 +34,7 @@ let pendingUnhandledFetch: Promise<void> | null = null
 export const useGroupRequestStore = defineStore('imGroupRequestStore', {
   state: () => ({
     /** 我管理的所有群下未处理申请列表（按 id 倒序） */
-    unhandledList: [] as ImGroupRequestRespVO[],
-    /** fetchUnhandledGroupRequestList 是否成功执行过；避免横幅显示 0 然后跳数字的闪烁 */
-    loaded: false
+    unhandledList: [] as ImGroupRequestRespVO[]
   }),
 
   getters: {
@@ -51,81 +51,44 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
     /** 指定群下的未处理申请数 */
     getUnhandledGroupRequestCount(): (groupId: number) => number {
       return (groupId: number) => this.getUnhandledGroupRequestCountMap.get(groupId) ?? 0
-    },
-    /** 指定群下的未处理申请列表 */
-    getUnhandledGroupRequestListByGroupId:
-      (state) =>
-      (groupId: number): ImGroupRequestRespVO[] =>
-        state.unhandledList.filter((r) => r.groupId === groupId)
+    }
   },
 
   actions: {
     /** 从 IndexedDB 恢复加群申请 */
-    async loadGroupRequestList(): Promise<boolean> {
+    async loadGroupRequestList(): Promise<void> {
       try {
         const cached = await getDb().getAll<GroupRequestDO>('groupRequests')
-        if (!cached || cached.length === 0) {
-          return false
+        if (cached.length === 0) {
+          return
         }
         this.unhandledList = cached
           .filter((request) => request.handleResult === ImGroupRequestHandleResult.UNHANDLED)
           .sort((requestA, requestB) => requestB.id - requestA.id)
-        return true
       } catch (e) {
         console.warn('[IM groupRequestStore] 本地加群申请缓存读取失败', e)
-        return false
       }
-    },
-
-    /** 保存加群申请列表 */
-    saveGroupRequestList(
-      requests?: ImGroupRequestRespVO[],
-      db: DbClient = getDb()
-    ): void {
-      const snapshot = requests ?? [...this.unhandledList]
-      void db
-        .transaction(['groupRequests'], 'readwrite', async (tx) => {
-          await db.clearStore('groupRequests', tx)
-          for (const request of snapshot) {
-            await db.put('groupRequests', request, tx)
-          }
-        })
-        .catch((e) => console.warn('[IM groupRequestStore] 本地加群申请缓存写入失败', e))
-    },
-
-    /** 保存单条加群申请 */
-    async saveGroupRequestRecord(
-      request: ImGroupRequestRespVO,
-      db: DbClient = getDb()
-    ): Promise<void> {
-      await db.put('groupRequests', request)
-    },
-
-    /** 保存单条加群申请 */
-    saveGroupRequest(request: ImGroupRequestRespVO, db: DbClient = getDb()): void {
-      void this.saveGroupRequestRecord(request, db).catch((e) =>
-        console.warn('[IM groupRequestStore] 本地加群申请写入失败', e)
-      )
     },
 
     /** 拉取我管理的所有群下未处理申请；进 IM 后 / 升级 admin 后 / WS 推送有冲突时调用 */
     async fetchUnhandledGroupRequestList() {
-      if (pendingUnhandledFetch) {
-        return pendingUnhandledFetch
-      }
-      const promise = (async () => {
-        const db = await initDb()
-        const list = await apiGetUnhandledRequestList()
-        this.unhandledList = list || []
-        this.loaded = true
-        this.saveGroupRequestList(this.unhandledList, db)
-      })().finally(() => {
-        if (pendingUnhandledFetch === promise) {
-          pendingUnhandledFetch = null
-        }
-      })
-      pendingUnhandledFetch = promise
-      return promise
+      return runResourceRequest(
+        ResourceRequestKey.GROUP_REQUEST_UNHANDLED,
+        async () => {
+          const db = await initDb()
+          this.unhandledList = await apiGetUnhandledRequestList()
+          const snapshot = [...this.unhandledList]
+          void db
+            .transaction(['groupRequests'], 'readwrite', async (tx) => {
+              await db.clearStore('groupRequests', tx)
+              for (const request of snapshot) {
+                await db.put('groupRequests', request, tx)
+              }
+            })
+            .catch((e) => console.warn('[IM groupRequestStore] 本地加群申请缓存写入失败', e))
+        },
+        { mode: ResourceRequestMode.SINGLE_FLIGHT }
+      )
     },
 
     /**
@@ -142,17 +105,6 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
       await this.upsertGroupRequestForPull(request, db)
     },
 
-    /**
-     * 本地合并 / 新增单条加群申请（WS 推送 & 增量拉取共用）
-     *
-     * 未处理的按 id 去重后置顶；已处理的从未处理列表移除，避免补偿时把已同意 / 拒绝的记录塞回红点
-     */
-    upsertGroupRequest(request: ImGroupRequestRespVO) {
-      void this.upsertGroupRequestForPull(request).catch((e) =>
-        console.warn('[IM groupRequestStore] 本地加群申请写入失败', e)
-      )
-    },
-
     /** 本地合并 / 新增单条加群申请 */
     async upsertGroupRequestForPull(
       request: ImGroupRequestRespVO,
@@ -163,7 +115,7 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
         return
       }
       this.unhandledList = [request, ...this.unhandledList.filter((r) => r.id !== request.id)]
-      await this.saveGroupRequestRecord(request, db)
+      await db.put('groupRequests', request)
     },
 
     /**
@@ -183,7 +135,6 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
           return true
         }
       )
-      this.loaded = true
     },
 
     /** WS 收到 1505 / 1506 或本端处理完一条：按 requestId 从列表移除 */
@@ -195,10 +146,7 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
     },
 
     /** 删除单条加群申请 */
-    async removeGroupRequestByIdForPull(
-      requestId: number,
-      db: DbClient = getDb()
-    ): Promise<void> {
+    async removeGroupRequestByIdForPull(requestId: number, db: DbClient = getDb()): Promise<void> {
       this.unhandledList = this.unhandledList.filter((r) => r.id !== requestId)
       await db.delete('groupRequests', requestId)
     },
@@ -220,13 +168,9 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
     /** 清空加群申请内存 */
     clear() {
       this.unhandledList = []
-      this.loaded = false
-      pendingUnhandledFetch = null
     }
   }
 })
-
-export const useGroupRequestStoreWithOut = () => useGroupRequestStore(store)
 
 if (import.meta.hot) {
   import.meta.hot.accept(acceptHMRUpdate(useGroupRequestStore, import.meta.hot))

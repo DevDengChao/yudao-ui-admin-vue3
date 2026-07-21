@@ -1,7 +1,6 @@
 import { updateFile } from '@/api/infra/file'
 import { useMessage } from '@/hooks/web/useMessage'
 import { isOpenableUrl } from '@/utils/url'
-import { getCurrentUserId } from '@/utils/auth'
 
 import { useMessageStore } from '../store/messageStore'
 import { useMessageSender } from './useMessageSender'
@@ -28,7 +27,7 @@ import {
 import type { Conversation, Message } from '../types'
 
 /** 单条媒体 payload 联合（覆盖 IMAGE / FILE / VOICE / VIDEO 四种） */
-export type MediaPayload = ImageMessage | FileMessage | AudioMessage | VideoMessage
+type MediaPayload = ImageMessage | FileMessage | AudioMessage | VideoMessage
 
 /**
  * 媒体特定的元数据上下文：首发 / 重传共用入参；不同 type 关心不同字段
@@ -37,13 +36,13 @@ export type MediaPayload = ImageMessage | FileMessage | AudioMessage | VideoMess
  * - videoProbe：视频元信息（首发由 probeVideoFile 解出，重传从旧 VideoMessage 直接拷字段）
  * - videoCoverUrl：视频封面真实 URL；占位阶段不设（避免传 blob 当 poster 在部分浏览器退化），commit 阶段由 cover 上传结果填入；重传时从旧 VideoMessage.coverUrl 复用，旧值若是 blob 会被跳过
  */
-export interface MediaTypeContext {
+interface MediaTypeContext {
   voiceDuration?: number
   videoProbe?: { duration?: number; width?: number; height?: number }
   videoCoverUrl?: string
 }
 
-export interface MediaTypeHandler {
+interface MediaTypeHandler {
   /** 中文名，仅日志用（替代之前散落 9 处的 kind 字符串） */
   kind: string
   /** 由 file + url + context 生成 payload；占位时 url 是 blob URL，commit 时是真实 url */
@@ -97,7 +96,7 @@ export const mediaTypeHandlers: Partial<Record<number, MediaTypeHandler>> = {
 }
 
 /** 单次媒体上传的入参（image / file / voice 走 uploadAndSendMedia；video 走低层 helper 自行组装） */
-export interface UploadAndSendMediaOptions {
+interface UploadAndSendMediaOptions {
   file: File
   /** 对齐 ImContentType；mediaTypeHandlers 必须有对应项 */
   type: number
@@ -208,7 +207,7 @@ export const useMediaUploader = () => {
       content: opts.buildContent(blobUrl),
       status: ImMessageStatus.SENDING,
       sendTime: Date.now(),
-      senderId: getCurrentUserId(),
+      senderId: db.userId,
       targetId: conversation.targetId,
       selfSend: true,
       uploadProgress: 0,
@@ -275,9 +274,6 @@ export const useMediaUploader = () => {
       })
     }
   }
-
-  /** 取媒体类型中文名（仅日志用）；未注册 type 退化为通用「媒体」 */
-  const getMediaKind = (type: number): string => mediaTypeHandlers[type]?.kind ?? '媒体'
 
   /**
    * 按 type 取 handler，缺则抛错（程序错误集中在这一处）
@@ -394,7 +390,6 @@ export const useMediaUploader = () => {
     insertMediaPlaceholder,
     markMediaFailed,
     createUploadProgressHandler,
-    getMediaKind,
     requireMediaHandler
   }
 }

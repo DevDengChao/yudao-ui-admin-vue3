@@ -4,7 +4,8 @@ export enum ResourceRequestKey {
   FACE_USER_ITEMS = 'faceUserItems', // 用户表情
   FRIEND_LIST = 'friendList', // 好友列表
   GROUP_LIST = 'groupList', // 群列表
-  CHANNEL_LIST = 'channelList' // 频道列表
+  CHANNEL_LIST = 'channelList', // 频道列表
+  GROUP_REQUEST_UNHANDLED = 'groupRequestUnhandled' // 未处理加群申请
 }
 
 /** 固定资源请求的 task 生命周期模式 */
@@ -14,7 +15,7 @@ export enum ResourceRequestMode {
 }
 
 /** 固定资源请求策略 */
-export type ResourceRequestPolicy =
+type ResourceRequestPolicy =
   | {
       mode: ResourceRequestMode.CACHE_SUCCESS
     }
@@ -44,9 +45,11 @@ export function runResourceRequest<T>(
     if (existing.mode !== policy.mode) {
       return Promise.reject(new Error(`IM resource policy mismatch: ${key}`))
     }
-    if (existing.mode === ResourceRequestMode.SINGLE_FLIGHT
-      && policy.mode === ResourceRequestMode.SINGLE_FLIGHT
-      && policy.refreshAfterPending) {
+    if (
+      existing.mode === ResourceRequestMode.SINGLE_FLIGHT &&
+      policy.mode === ResourceRequestMode.SINGLE_FLIGHT &&
+      policy.refreshAfterPending
+    ) {
       existing.trailingExecute = execute
     }
     return existing.task as Promise<T>
@@ -78,11 +81,9 @@ function finishResourceRequest(
   resourceRequests.delete(key)
   // 3. single-flight 的多次 force 合并为一次后台尾随刷新
   if (entry.trailingExecute) {
-    void runResourceRequest(
-      key,
-      entry.trailingExecute,
-      { mode: ResourceRequestMode.SINGLE_FLIGHT }
-    ).catch((error) => console.warn(`[IM] 尾随刷新 ${key} 失败`, error))
+    void runResourceRequest(key, entry.trailingExecute, {
+      mode: ResourceRequestMode.SINGLE_FLIGHT
+    }).catch((error) => console.warn(`[IM] 尾随刷新 ${key} 失败`, error))
   }
 }
 
@@ -101,9 +102,7 @@ export async function clearResourceRequests(): Promise<void> {
 }
 
 /** 判断固定资源当前是否有请求在途 */
-export function isResourceRequestPending(
-  key: ResourceRequestKey
-): boolean {
+export function isResourceRequestPending(key: ResourceRequestKey): boolean {
   const entry = resourceRequests.get(key)
   return entry?.mode === ResourceRequestMode.SINGLE_FLIGHT
 }

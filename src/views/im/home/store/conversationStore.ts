@@ -424,15 +424,6 @@ export const useConversationStore = defineStore('imConversationStore', {
       return !!record && message.id <= record.messageId
     },
 
-    /** 判断会话读位置是否覆盖消息编号 */
-    isReadPositionCovered(type: number, targetId: number, messageId?: number): boolean {
-      if (!messageId) {
-        return false
-      }
-      const record = this.getConversationRead(type, targetId)
-      return !!record && record.messageId >= messageId
-    },
-
     /** 判断服务端已读位置是否覆盖消息编号 */
     isReportedReadPositionCovered(type: number, targetId: number, messageId?: number): boolean {
       if (!messageId) {
@@ -1164,8 +1155,6 @@ export const useConversationStore = defineStore('imConversationStore', {
   }
 })
 
-export const useConversationStoreWithOut = () => useConversationStore(store)
-
 /** 合并草稿写入 */
 const saveDraftConversationListDebounced = debounce(async (): Promise<void> => {
   const conversations = Array.from(pendingDraftConversations.entries())
@@ -1173,7 +1162,7 @@ const saveDraftConversationListDebounced = debounce(async (): Promise<void> => {
   if (conversations.length === 0) {
     return
   }
-  const conversationStore = useConversationStoreWithOut()
+  const conversationStore = useConversationStore(store)
   await Promise.all(
     conversations.map(([conversation, db]) =>
       conversationStore.saveConversationList([conversation], undefined, db)
