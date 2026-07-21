@@ -46,10 +46,8 @@ export async function runIncrementalPull<T extends PullRecord>(
   db: DbClient,
   cursorKey: string,
   fetchPage: (params: { lastUpdateTime?: number; lastId?: number; limit: number }) => Promise<T[]>,
-  apply: (records: T[]) => boolean | Promise<boolean>,
-  isActive?: () => boolean
+  apply: (records: T[]) => boolean | Promise<boolean>
 ): Promise<void> {
-  const canContinue = () => !isActive || isActive()
   const storedCursor = await getPullCursor(db, cursorKey)
   const highWater = { ...storedCursor }
   let cursor =
@@ -57,23 +55,14 @@ export async function runIncrementalPull<T extends PullRecord>(
       ? { lastUpdateTime: Math.max(0, storedCursor.lastUpdateTime - PULL_OVERLAP_MS), lastId: 0 }
       : {}
   for (let page = 0; page < PULL_MAX_PAGES; page++) {
-    if (!canContinue()) {
-      return
-    }
     const list = await fetchPage({
       lastUpdateTime: cursor.lastUpdateTime,
       lastId: cursor.lastId,
       limit: PULL_PAGE_SIZE
     })
-    if (!canContinue()) {
-      return
-    }
     if (list.length) {
       // apply 未完全落地（返回 false）时直接终止：游标只能跟着已落地的数据走，否则会跳过本页记录
       if ((await apply(list)) === false) {
-        return
-      }
-      if (!canContinue()) {
         return
       }
       // 推进游标到本页最后一条并持久化：下次从这里接着拉

@@ -314,7 +314,7 @@ export interface FaceMessage extends Quotable {
 }
 
 /** 合并转发的单条内嵌消息快照（对齐后端 MergeMessage.Item） */
-export interface MergeMessageItem {
+interface MergeMessageItem {
   /** 原消息编号；仅做溯源标识 */
   messageId: number
   /** 发送人编号 */
@@ -440,7 +440,7 @@ export function buildMergeMessagePayload(
 }
 
 /** 「添加到表情」的可发起源：FACE / IMAGE 都允许（GIF 图片也常被收藏） */
-export interface AddableFacePayload {
+interface AddableFacePayload {
   url: string
   width: number
   height: number
@@ -712,7 +712,7 @@ export function resolveGroupNotificationSegments(
   resolveName: (userId: number) => string,
   operatorNameOverride?: string
 ): TipSegment[] {
-  let payload: GroupNotificationPayload = {}
+  let payload: GroupNotificationPayload
   try {
     payload = JSON.parse(message.content || '{}')
   } catch {

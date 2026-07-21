@@ -29,7 +29,7 @@
 </template>
 
 <script lang="ts">
-// TODO @AI：【done】不能合并；这里需要模块级单例协调前后两个 IM 页面实例
+// 模块级单例协调前后两个 IM 页面实例
 let activeImShellOwner: object | null = null
 </script>
 
@@ -222,7 +222,7 @@ onUnmounted(async () => {
   if (activeImShellOwner !== shellOwner) {
     return
   }
-  // TODO @AI：【done】先释放旧壳 owner；后续 await 后若新壳接管，则停止清理共享资源
+  // 先释放旧壳 owner；后续 await 后若新壳接管，则停止清理共享资源
   activeImShellOwner = null
   wsStore.disconnect()
   await clearResourceRequests()

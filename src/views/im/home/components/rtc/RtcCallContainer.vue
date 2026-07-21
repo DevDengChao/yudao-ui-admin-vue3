@@ -89,7 +89,6 @@ const message = useMessage()
 const lk = useLiveKitRoom()
 
 const memberPickerRef = ref<InstanceType<typeof RtcCallMemberPickerDialog>>()
-// TODO @AI：【done】不能合并；业务 room 与物理 Room 分别用于阻断旧操作和释放准确的 LiveKit 实例
 let connectingRoom = '' // 正在连接的业务 room
 let liveKitRoom = '' // 当前 LiveKit Room 对应的业务 room
 

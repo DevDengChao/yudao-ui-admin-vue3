@@ -123,7 +123,7 @@ watch(
       }
       try {
         const data = await getActiveCall(groupId)
-        if (obsolete || false) {
+        if (obsolete) {
           return
         }
         if (data) {
@@ -153,7 +153,7 @@ watch(
     // 拉最新参与者写回 store；接口返回空 → 该群已无活跃通话，移除本地缓存
     try {
       const data = await getActiveCall(groupId)
-      if (obsolete || false) {
+      if (obsolete) {
         return
       }
       if (data) {
@@ -206,7 +206,7 @@ async function handleJoin() {
     message.warning('您正在通话中')
     return
   }
-  // TODO @AI：【done】不能删；加入结果会获取物理房间凭证，必须阻断旧用户或旧群结果发布
+  // 加入结果会获取物理房间凭证，必须阻断旧用户或旧群结果发布
   popoverVisible.value = false
   joining.value = true
   const userId = getCurrentUserId()

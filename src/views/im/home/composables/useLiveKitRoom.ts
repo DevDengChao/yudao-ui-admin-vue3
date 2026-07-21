@@ -55,7 +55,7 @@ export function useLiveKitRoom() {
   const participantConnectedHandlers = new Set<ParticipantEventHandler>()
   /** 房内某人离开订阅者；用于把 userId 标记为「已退出」从 pending 占位中移除 */
   const participantDisconnectedHandlers = new Set<ParticipantEventHandler>()
-  let connectionOwner = {} // TODO @AI：【done】连接 owner 用于阻断旧 connect/callback 修改新 Room 状态。
+  let connectionOwner = {} // 连接 owner 用于阻断旧 connect/callback 修改新 Room 状态
 
   /** 同步远端参与者列表到响应式数组 */
   function syncRemotes(r: Room) {
