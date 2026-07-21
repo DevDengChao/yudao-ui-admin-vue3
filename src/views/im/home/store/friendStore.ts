@@ -44,28 +44,12 @@ function queueFriendListRefreshAfterPending(fetch: () => Promise<unknown>): void
   }
 }
 
-type PendingRequest = {
-  promise: Promise<void>
-}
-
 /** 当前正在进行的好友申请列表拉取；多端连续多条申请到达时复用同一 Promise，避免雪崩重拉 */
-let pendingFetchRequests: PendingRequest | null = null
+let pendingFetchRequests: Promise<void> | null = null
 /** 当前正在进行的「加载更多申请」请求 */
-let pendingLoadMoreRequests: PendingRequest | null = null
+let pendingLoadMoreRequests: Promise<void> | null = null
 /** 当前正在进行的好友详情请求 */
-const pendingFetchFriendInfos = new Map<number, PendingRequest>()
-let friendRequestMutationSequence = 0
-const friendRequestVersions = new Map<number, number>()
-
-/** 记录好友申请的最新本地变更顺序 */
-function markFriendRequestMutation(requestId: number): void {
-  friendRequestVersions.set(requestId, ++friendRequestMutationSequence)
-}
-
-/** 判断好友申请是否在本次远端请求发出后发生过变更 */
-function wasFriendRequestMutatedAfter(requestId: number, requestStartedAt: number): boolean {
-  return (friendRequestVersions.get(requestId) || 0) > requestStartedAt
-}
+const pendingFetchFriendInfos = new Map<number, Promise<void>>()
 
 /** 好友通知 payload（对齐后端 BaseFriendNotification + 子类裁减后的字段） */
 export interface FriendNotificationPayload {
@@ -310,7 +294,7 @@ export const useFriendStore = defineStore('imFriendStore', {
     async fetchFriendInfo(friendUserId: number) {
       const inflight = pendingFetchFriendInfos.get(friendUserId)
       if (inflight) {
-        return inflight.promise
+        return inflight
       }
       const promise = (async () => {
         try {
@@ -324,11 +308,11 @@ export const useFriendStore = defineStore('imFriendStore', {
           console.warn('[IM friendStore] fetchFriendInfo 失败', e)
         }
       })().finally(() => {
-        if (pendingFetchFriendInfos.get(friendUserId)?.promise === promise) {
+        if (pendingFetchFriendInfos.get(friendUserId) === promise) {
           pendingFetchFriendInfos.delete(friendUserId)
         }
       })
-      pendingFetchFriendInfos.set(friendUserId, { promise })
+      pendingFetchFriendInfos.set(friendUserId, promise)
       return promise
     },
 
@@ -362,7 +346,6 @@ export const useFriendStore = defineStore('imFriendStore', {
     ): Promise<void> {
       const request = this.getFriendRequest(requestId)
       if (request) {
-        markFriendRequestMutation(requestId)
         request.handleResult = result
         if (handleContent !== undefined) {
           request.handleContent = handleContent
@@ -377,30 +360,22 @@ export const useFriendStore = defineStore('imFriendStore', {
     /** 拉取「我相关」的好友申请列表首页（页面打开 / 收到 FRIEND_REQUEST_RECEIVED 时刷新）；pending 期间复用同一 Promise */
     async fetchFriendRequestList() {
       if (pendingFetchRequests) {
-        return pendingFetchRequests.promise
+        return pendingFetchRequests
       }
-      const requestStartedAt = friendRequestMutationSequence
       const promise = (async () => {
         const db = await initDb()
         const list = await apiGetMyFriendRequestList(FRIEND_REQUEST_PAGE_SIZE)
         const items = (list || []).map(convertFriendRequest)
-        const preserved = this.friendRequests.filter((request) =>
-          wasFriendRequestMutatedAfter(request.id, requestStartedAt)
-        )
-        const preservedIds = new Set(preserved.map((request) => request.id))
-        this.friendRequests = [
-          ...preserved,
-          ...items.filter((request) => !preservedIds.has(request.id))
-        ].sort((left, right) => right.id - left.id)
+        this.friendRequests = items.sort((left, right) => right.id - left.id)
         // 不足一页即没有更多；满页可能还有，等 loadMore 拉到 0 条再确定
         this.hasMoreFriendRequests = items.length >= FRIEND_REQUEST_PAGE_SIZE
         this.saveFriendRequestList(undefined, db)
       })().finally(() => {
-        if (pendingFetchRequests?.promise === promise) {
+        if (pendingFetchRequests === promise) {
           pendingFetchRequests = null
         }
       })
-      pendingFetchRequests = { promise }
+      pendingFetchRequests = promise
       return promise
     },
 
@@ -410,32 +385,27 @@ export const useFriendStore = defineStore('imFriendStore', {
         return
       }
       if (pendingLoadMoreRequests) {
-        return pendingLoadMoreRequests.promise
+        return pendingLoadMoreRequests
       }
       const oldest = this.friendRequests[this.friendRequests.length - 1]
       if (!oldest) {
         return this.fetchFriendRequestList()
       }
-      const requestStartedAt = friendRequestMutationSequence
       const promise = (async () => {
         const db = await initDb()
         const list = await apiGetMyFriendRequestList(FRIEND_REQUEST_PAGE_SIZE, oldest.id)
         const items = (list || []).map(convertFriendRequest)
         const currentIds = new Set(this.friendRequests.map((request) => request.id))
-        const additions = items.filter(
-          (request) =>
-            !currentIds.has(request.id) &&
-            !wasFriendRequestMutatedAfter(request.id, requestStartedAt)
-        )
+        const additions = items.filter((request) => !currentIds.has(request.id))
         this.friendRequests.push(...additions)
         this.hasMoreFriendRequests = items.length >= FRIEND_REQUEST_PAGE_SIZE
         this.saveFriendRequestList(undefined, db)
       })().finally(() => {
-        if (pendingLoadMoreRequests?.promise === promise) {
+        if (pendingLoadMoreRequests === promise) {
           pendingLoadMoreRequests = null
         }
       })
-      pendingLoadMoreRequests = { promise }
+      pendingLoadMoreRequests = promise
       return promise
     },
 
@@ -446,12 +416,11 @@ export const useFriendStore = defineStore('imFriendStore', {
 
     /** 按 id 从后端单查并 upsert 到本地（dispatcher 兜底用，避免全量重拉）；后端带越权过滤 */
     async fetchFriendRequest(requestId: number, db: DbClient = getDb()) {
-      const requestStartedAt = friendRequestMutationSequence
       const data = await apiGetMyFriendRequest(requestId)
       if (!data) {
         return
       }
-      await this.upsertFriendRequestForPull(convertFriendRequest(data), requestStartedAt, db)
+      await this.upsertFriendRequestForPull(convertFriendRequest(data), db)
     },
 
     /** 合并单条好友申请：已有则按 id 覆盖；新记录按 id 倒序插入（比本地最旧还老则跳过，留给 loadMore 带回） */
@@ -464,13 +433,8 @@ export const useFriendStore = defineStore('imFriendStore', {
     /** 合并单条好友申请 */
     async upsertFriendRequestForPull(
       next: FriendRequest,
-      requestStartedAt = friendRequestMutationSequence,
       db: DbClient = getDb()
     ): Promise<void> {
-      if (wasFriendRequestMutatedAfter(next.id, requestStartedAt)) {
-        return
-      }
-      markFriendRequestMutation(next.id)
       const existing = this.getFriendRequest(next.id)
       if (existing) {
         Object.assign(existing, next)
@@ -494,23 +458,14 @@ export const useFriendStore = defineStore('imFriendStore', {
 
     /** 增量拉取好友申请变更并合并（重连 / 离线补偿）；按 update_time + id 游标，已处理的按 handleResult 覆盖 */
     async pullFriendRequests() {
-      const pageRequestStarts = new WeakMap<ImFriendRequestRespVO[], number>()
       const db = await initDb()
       await runIncrementalPull(
         db,
         StorageKeys.settings.friendRequestPullCursor,
-        async (params) => {
-          const requestStartedAt = friendRequestMutationSequence
-          const records = await apiPullMyFriendRequestList(params)
-          pageRequestStarts.set(records, requestStartedAt)
-          return records
-        },
+        (params) => apiPullMyFriendRequestList(params),
         async (records) => {
-          const requestStartedAt = pageRequestStarts.get(records) ?? friendRequestMutationSequence
           await Promise.all(
-            records.map((vo) =>
-              this.upsertFriendRequestForPull(convertFriendRequest(vo), requestStartedAt, db)
-            )
+            records.map((vo) => this.upsertFriendRequestForPull(convertFriendRequest(vo), db))
           )
           return true
         }
@@ -672,7 +627,6 @@ export const useFriendStore = defineStore('imFriendStore', {
           fromNickname: payload.fromNickname,
           fromAvatar: payload.fromAvatar
         }
-        markFriendRequestMutation(next.id)
         this.friendRequests.unshift(next)
         this.saveFriendRequest(next)
         return
@@ -688,7 +642,6 @@ export const useFriendStore = defineStore('imFriendStore', {
         fromNickname: payload.fromNickname,
         fromAvatar: payload.fromAvatar
       }
-      markFriendRequestMutation(next.id)
       this.friendRequests.unshift(next)
       this.saveFriendRequest(next)
     },
@@ -792,8 +745,6 @@ export const useFriendStore = defineStore('imFriendStore', {
       pendingFetchRequests = null
       pendingLoadMoreRequests = null
       pendingFetchFriendInfos.clear()
-      friendRequestMutationSequence = 0
-      friendRequestVersions.clear()
     }
   }
 })

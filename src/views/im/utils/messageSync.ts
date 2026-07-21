@@ -2,17 +2,7 @@
 export enum MessageTerminalPriority {
   NORMAL = 0, // 普通消息
   CONFIRMED = 1, // 服务端已确认消息
-  RECALL = 2, // 撤回终态
-  DELETE = 3, // 单条删除终态
-  CLEAR = 4 // 会话清空终态
-}
-
-/** 消息事件来源；仅 PULL 链拥有拉取 cursor */
-export enum MessageEventSource {
-  PULL = 'pull', // HTTP 增量拉取
-  WEBSOCKET = 'websocket', // 实时推送
-  ACK = 'ack', // 发送确认
-  LOCAL = 'local' // 本地操作
+  RECALL = 2 // 撤回终态
 }
 
 /** 会话写 lane 与全量屏障 */
@@ -87,15 +77,6 @@ export function enqueueConversationBarrier<T>(operation: () => Promise<T>): Prom
     await Promise.all(existingWrites.map((task) => task.catch(() => undefined)))
     return await operation()
   })().finally(release)
-}
-
-/** 消息域统一入口；source 只标识游标所有权，只有 PULL 调用方可提交 cursor */
-export function applyMessageEvents<T>(
-  clientConversationIds: string[],
-  _source: MessageEventSource,
-  apply: () => Promise<T>
-): Promise<T> {
-  return enqueueConversationWrites(clientConversationIds, apply)
 }
 
 /** 终态优先；相同优先级使用后到达状态 */

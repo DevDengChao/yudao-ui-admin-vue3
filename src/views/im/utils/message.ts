@@ -35,8 +35,7 @@ export const generateClientMessageId = (): string => {
 /**
  * 私聊消息 / DTO 的对端 userId：自己发的对端是 receiver，别人发的对端是 sender
  *
- * 收口 4 处旧 inline（websocketStore.convertPrivateMessage / handlePrivateMessage / computeFriendPeerId
- * 和 useMessagePuller.getPrivatePeerId），结构类型只要 senderId / receiverId 两个字段，REST 与 WS DTO 都满足
+ * WebSocket 与 HTTP pull 共用；结构类型只要求 senderId / receiverId，REST 与 WS DTO 都满足
  */
 export function getPrivateMessagePeerId(
   message: { senderId: number; receiverId: number },

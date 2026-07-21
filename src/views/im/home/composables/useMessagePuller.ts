@@ -8,11 +8,13 @@ import { useGroupStore } from '../store/groupStore'
 import { useGroupRequestStore } from '../store/groupRequestStore'
 import { useRtcStore } from '../store/rtcStore'
 import {
+  getPrivateMessageList as apiGetPrivateMessageList,
   pullPrivateMessageList as apiPullPrivateMessageList,
   getPrivateMaxReadMessageId as apiGetPrivateMaxReadMessageId,
   type ImPrivateMessageRespVO
 } from '@/api/im/message/private'
 import {
+  getGroupMessageList as apiGetGroupMessageList,
   pullGroupMessageList as apiPullGroupMessageList,
   type ImGroupMessageRespVO
 } from '@/api/im/message/group'
@@ -71,10 +73,6 @@ export const useMessagePuller = () => {
     )
   }
 
-  /** 私聊会话归属：自己发的算发给 receiverId 的会话，否则算发送方的会话 */
-  const getPrivatePeerId = (message: ImPrivateMessageRespVO, currentUserId: number) =>
-    getPrivateMessagePeerId(message, currentUserId)
-
   /** 服务端私聊消息 -> 本地 Message：targetId 是会话主键（对端 userId） */
   const convertPrivateMessage = (
     message: ImPrivateMessageRespVO,
@@ -89,7 +87,7 @@ export const useMessagePuller = () => {
       receiptStatus: message.receiptStatus,
       sendTime: new Date(message.sendTime).getTime(),
       senderId: message.senderId,
-      targetId: getPrivatePeerId(message, currentUserId),
+      targetId: getPrivateMessagePeerId(message, currentUserId),
       selfSend: message.senderId === currentUserId
     }
   }
@@ -136,7 +134,7 @@ export const useMessagePuller = () => {
 
   /** 私聊：会话归属到对端 userId */
   const convertPrivateConversation = (message: ImPrivateMessageRespVO, currentUserId: number) => {
-    const targetId = getPrivatePeerId(message, currentUserId)
+    const targetId = getPrivateMessagePeerId(message, currentUserId)
     const friend = friendStore.getFriend(targetId)
     return {
       type: ImConversationType.PRIVATE,
@@ -211,7 +209,7 @@ export const useMessagePuller = () => {
               pulledMessages.push({
                 kind: 'recall',
                 conversationType: ImConversationType.PRIVATE,
-                targetId: getPrivatePeerId(message, db.userId),
+                targetId: getPrivateMessagePeerId(message, db.userId),
                 recallSignalContent: message.content
               })
               continue
@@ -435,6 +433,32 @@ export const useMessagePuller = () => {
     return pullPromise
   }
 
+  /** 拉取并持久化一页更早的会话消息 */
+  const loadEarlierMessages = async (
+    conversationType: number,
+    targetId: number,
+    maxId: number | undefined,
+    limit: number
+  ): Promise<number> => {
+    const db = await initDb()
+    // 私聊和群聊接口参数不同，但统一复用当前 puller 的字段转换规则
+    const messages =
+      (conversationType === ImConversationType.GROUP
+        ? await apiGetGroupMessageList({ groupId: targetId, maxId, limit })
+        : await apiGetPrivateMessageList({ receiverId: targetId, maxId, limit })) || []
+    const converted =
+      conversationType === ImConversationType.GROUP
+        ? (messages as ImGroupMessageRespVO[]).map((message) =>
+            convertGroupMessage(message, db.userId)
+          )
+        : (messages as ImPrivateMessageRespVO[]).map((message) =>
+            convertPrivateMessage(message, db.userId)
+          )
+    // Store 负责去重、升序合并与落库，主聊天面板会同步看到新增的历史消息
+    await messageStore.prependMessageList(conversationType, targetId, converted, db)
+    return messages.length
+  }
+
   /**
    * 断网期间 WS 收不到推送：重连后既要按 minId 补齐消息，也要按 update_time + id 补齐好友 / 群 / 群申请状态。
    * 首次连接由 Index.vue 显式驱动（pullOnce 拉消息 + 各 store 首拉），这里仅覆盖之后的重连。
@@ -452,5 +476,5 @@ export const useMessagePuller = () => {
     }
   )
 
-  return { pullOnce, cancelPull, convertPrivateMessage, convertGroupMessage }
+  return { pullOnce, cancelPull, loadEarlierMessages }
 }

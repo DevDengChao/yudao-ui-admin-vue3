@@ -68,7 +68,6 @@ export const StorageKeys = {
   }
 } as const
 
-let currentDb: IDBDatabase | null = null
 let currentClient: DbClient | null = null
 let initialization:
   | {
@@ -188,24 +187,17 @@ export async function initDb(): Promise<DbClient> {
   if (initialization?.userId === userId) {
     return initialization.promise
   }
-  const nextInitialization = { userId } as {
-    userId: number
-    promise: Promise<DbClient>
-  }
-  const promise = (async () => {
-    const nextDb = await openDb(getDbName(userId))
-    if (initialization?.promise !== nextInitialization.promise || getCurrentUserId() !== userId) {
+  const promise = openDb(getDbName(userId)).then((nextDb) => {
+    if (initialization?.promise !== promise || getCurrentUserId() !== userId) {
       nextDb.close()
       throw new Error('IM DB 初始化已失效')
     }
     const nextClient = new DbClient(nextDb, userId)
-    currentDb?.close()
-    currentDb = nextDb
+    currentClient?.close()
     currentClient = nextClient
     return nextClient
-  })()
-  nextInitialization.promise = promise
-  initialization = nextInitialization
+  })
+  initialization = { userId, promise }
   try {
     return await promise
   } finally {
@@ -218,8 +210,7 @@ export async function initDb(): Promise<DbClient> {
 /** 关闭当前 IM DB 连接 */
 export function closeDb(): Promise<void> {
   initialization = undefined
-  currentDb?.close()
-  currentDb = null
+  currentClient?.close()
   currentClient = null
   return Promise.resolve()
 }
@@ -252,6 +243,11 @@ export class DbClient {
     private readonly db: IDBDatabase,
     readonly userId: number
   ) {}
+
+  /** 关闭底层 IndexedDB 连接 */
+  close(): void {
+    this.db.close()
+  }
 
   /** 获取单条记录 */
   async get<T>(

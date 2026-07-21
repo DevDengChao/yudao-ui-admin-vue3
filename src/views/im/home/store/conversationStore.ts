@@ -481,7 +481,7 @@ export const useConversationStore = defineStore('imConversationStore', {
     /** 实际应用会话读位置；调用方必须持有涉及会话的写 lane */
     async applyConversationReadListNow(
       records: ImConversationReadRespVO[],
-      db: DbClient = getDb()
+      db: DbClient
     ): Promise<void> {
       if (records.length === 0) {
         return
@@ -867,7 +867,7 @@ export const useConversationStore = defineStore('imConversationStore', {
     },
 
     /** 实际删除会话；调用方必须持有当前会话写 lane */
-    async removeConversationNow(type: number, targetId: number, db: DbClient = getDb()) {
+    async removeConversationNow(type: number, targetId: number, db: DbClient) {
       if (!this.getConversation(type, targetId)) {
         return
       }
@@ -913,7 +913,7 @@ export const useConversationStore = defineStore('imConversationStore', {
     },
 
     /** 隐藏会话但保留消息；用于退群、被踢和群解散终态 */
-    async hideConversationNow(type: number, targetId: number, db: DbClient = getDb()) {
+    async hideConversationNow(type: number, targetId: number, db: DbClient) {
       const projection = await this.saveHiddenConversationRecord(type, targetId, undefined, db)
       if (projection) {
         this.publishHiddenConversationProjection(projection)
@@ -944,8 +944,8 @@ export const useConversationStore = defineStore('imConversationStore', {
     async markConversationReadNow(
       type: number,
       targetId: number,
-      messageId?: number,
-      db: DbClient = getDb()
+      messageId: number | undefined,
+      db: DbClient
     ) {
       const conversation = this.getConversation(type, targetId)
       if (!conversation) {
@@ -1004,7 +1004,7 @@ export const useConversationStore = defineStore('imConversationStore', {
       type: number,
       targetId: number,
       messageId: number,
-      db: DbClient = getDb()
+      db: DbClient
     ) {
       const conversation = this.getConversation(type, targetId)
       if (!conversation || messageId <= (conversation.reportedReadMessageId || 0)) {

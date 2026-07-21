@@ -14,38 +14,7 @@ import { getDb, initDb, StorageKeys, type DbClient } from '../../utils/db'
 import { runIncrementalPull } from '../../utils/pull'
 import type { GroupRequestDO } from '../types'
 
-type PendingRequest = {
-  promise: Promise<void>
-}
-
-let pendingUnhandledFetch: PendingRequest | null = null
-let groupRequestMutationSequence = 0
-const groupRequestVersions = new Map<number, { sequence: number; unhandled: boolean }>()
-
-/** 记录已处理申请的本地顺序 */
-function markGroupRequestHandled(requestId: number): void {
-  groupRequestVersions.set(requestId, {
-    sequence: ++groupRequestMutationSequence,
-    unhandled: false
-  })
-}
-
-/** 记录新增或刷新的未处理申请顺序 */
-function markGroupRequestUnhandled(requestId: number): void {
-  groupRequestVersions.set(requestId, {
-    sequence: ++groupRequestMutationSequence,
-    unhandled: true
-  })
-}
-
-/** 获取远端请求发出后的最新申请状态 */
-function getGroupRequestMutationAfter(
-  requestId: number,
-  requestStartedAt: number
-): { sequence: number; unhandled: boolean } | undefined {
-  const mutation = groupRequestVersions.get(requestId)
-  return mutation && mutation.sequence > requestStartedAt ? mutation : undefined
-}
+let pendingUnhandledFetch: Promise<void> | null = null
 
 /**
  * IM 加群申请 Store
@@ -142,33 +111,20 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
     /** 拉取我管理的所有群下未处理申请；进 IM 后 / 升级 admin 后 / WS 推送有冲突时调用 */
     async fetchUnhandledGroupRequestList() {
       if (pendingUnhandledFetch) {
-        return pendingUnhandledFetch.promise
+        return pendingUnhandledFetch
       }
-      const requestStartedAt = groupRequestMutationSequence
       const promise = (async () => {
         const db = await initDb()
         const list = await apiGetUnhandledRequestList()
-        const preserved = this.unhandledList.filter(
-          (request) =>
-            getGroupRequestMutationAfter(request.id, requestStartedAt)?.unhandled === true
-        )
-        const preservedIds = new Set(preserved.map((request) => request.id))
-        this.unhandledList = [
-          ...preserved,
-          ...(list || []).filter(
-            (request) =>
-              !preservedIds.has(request.id) &&
-              getGroupRequestMutationAfter(request.id, requestStartedAt)?.unhandled !== false
-          )
-        ]
+        this.unhandledList = list || []
         this.loaded = true
         this.saveGroupRequestList(this.unhandledList, db)
       })().finally(() => {
-        if (pendingUnhandledFetch?.promise === promise) {
+        if (pendingUnhandledFetch === promise) {
           pendingUnhandledFetch = null
         }
       })
-      pendingUnhandledFetch = { promise }
+      pendingUnhandledFetch = promise
       return promise
     },
 
@@ -179,12 +135,11 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
      */
     async addGroupRequestById(requestId: number) {
       const db = await initDb()
-      const requestStartedAt = groupRequestMutationSequence
       const request = await apiGetMyGroupRequest(requestId)
       if (!request) {
         return
       }
-      await this.upsertGroupRequestForPull(request, requestStartedAt, db)
+      await this.upsertGroupRequestForPull(request, db)
     },
 
     /**
@@ -201,17 +156,12 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
     /** 本地合并 / 新增单条加群申请 */
     async upsertGroupRequestForPull(
       request: ImGroupRequestRespVO,
-      requestStartedAt = groupRequestMutationSequence,
       db: DbClient = getDb()
     ): Promise<void> {
-      if (getGroupRequestMutationAfter(request.id, requestStartedAt)) {
-        return
-      }
       if (request.handleResult !== ImGroupRequestHandleResult.UNHANDLED) {
         await this.removeGroupRequestByIdForPull(request.id, db)
         return
       }
-      markGroupRequestUnhandled(request.id)
       this.unhandledList = [request, ...this.unhandledList.filter((r) => r.id !== request.id)]
       await this.saveGroupRequestRecord(request, db)
     },
@@ -223,22 +173,13 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
      * 故首次重连时游标为空 = 一次性全量走一遍（已处理记录命中 removeGroupRequestById 为 no-op，红点不受影响），之后增量。
      */
     async pullGroupRequests() {
-      const pageRequestStarts = new WeakMap<ImGroupRequestRespVO[], number>()
       const db = await initDb()
       await runIncrementalPull(
         db,
         StorageKeys.settings.groupRequestPullCursor,
-        async (params) => {
-          const requestStartedAt = groupRequestMutationSequence
-          const records = await apiPullMyGroupRequestList(params)
-          pageRequestStarts.set(records, requestStartedAt)
-          return records
-        },
+        (params) => apiPullMyGroupRequestList(params),
         async (records) => {
-          const requestStartedAt = pageRequestStarts.get(records) ?? groupRequestMutationSequence
-          await Promise.all(
-            records.map((vo) => this.upsertGroupRequestForPull(vo, requestStartedAt, db))
-          )
+          await Promise.all(records.map((vo) => this.upsertGroupRequestForPull(vo, db)))
           return true
         }
       )
@@ -247,7 +188,6 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
 
     /** WS 收到 1505 / 1506 或本端处理完一条：按 requestId 从列表移除 */
     removeGroupRequestById(requestId: number, db: DbClient = getDb()) {
-      markGroupRequestHandled(requestId)
       this.unhandledList = this.unhandledList.filter((r) => r.id !== requestId)
       void db
         .delete('groupRequests', requestId)
@@ -259,7 +199,6 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
       requestId: number,
       db: DbClient = getDb()
     ): Promise<void> {
-      markGroupRequestHandled(requestId)
       this.unhandledList = this.unhandledList.filter((r) => r.id !== requestId)
       await db.delete('groupRequests', requestId)
     },
@@ -283,8 +222,6 @@ export const useGroupRequestStore = defineStore('imGroupRequestStore', {
       this.unhandledList = []
       this.loaded = false
       pendingUnhandledFetch = null
-      groupRequestMutationSequence = 0
-      groupRequestVersions.clear()
     }
   }
 })

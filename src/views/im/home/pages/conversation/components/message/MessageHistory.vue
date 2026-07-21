@@ -247,8 +247,6 @@ import { formatHistoryTime } from '@/views/im/utils/time'
 import Icon from '@/components/Icon/src/Icon.vue'
 import { useMessage } from '@/hooks/web/useMessage'
 import { useUserStore } from '@/store/modules/user'
-import { getPrivateMessageList as apiGetPrivateMessageList } from '@/api/im/message/private'
-import { getGroupMessageList as apiGetGroupMessageList } from '@/api/im/message/group'
 import { useConversationStore } from '../../../../store/conversationStore'
 import { useMessageStore } from '../../../../store/messageStore'
 import { useGroupStore } from '../../../../store/groupStore'
@@ -287,7 +285,7 @@ import {
   type MergeMessage
 } from '@/views/im/utils/message'
 import type { Message } from '@/views/im/home/types'
-import { getClientConversationId, getDb } from '@/views/im/utils/db'
+import { getClientConversationId } from '@/views/im/utils/db'
 import UserAvatar from '../../../../components/user/UserAvatar.vue'
 import MessageBubble from './MessageBubble.vue'
 import GroupMember, { type GroupMemberLite } from '../../../../components/group/GroupMember.vue'
@@ -308,7 +306,7 @@ const groupStore = useGroupStore()
 const friendStore = useFriendStore()
 const openMergeDetail = inject(IM_MERGE_DETAIL_DIALOG_KEY)
 const voicePlayer = useVoicePlayer()
-const { convertPrivateMessage, convertGroupMessage } = useMessagePuller()
+const { loadEarlierMessages } = useMessagePuller()
 
 const visible = ref(false)
 
@@ -552,9 +550,6 @@ async function loadEarlier() {
     return
   }
   const requestedTargetId = conversation.value.targetId
-  const requestedIsGroup = requestedType === ImConversationType.GROUP
-  const db = getDb()
-
   loadingMore.value = true
   try {
     // 本地占位没有服务端 id，不参与历史游标
@@ -563,38 +558,13 @@ async function loadEarlier() {
       .reduce((min, message) => Math.min(min, message.id || min), Number.POSITIVE_INFINITY)
     const maxId = Number.isFinite(earliestId) ? earliestId : undefined
 
-    // 私聊和群聊接口参数不同，但统一复用 puller 的消息转换规则
-    let earlier: Message[] = []
-    let pageLength = 0
-    if (requestedIsGroup) {
-      const list = await apiGetGroupMessageList({
-        groupId: requestedTargetId,
-        maxId,
-        limit: HISTORY_PAGE_SIZE
-      })
-      earlier = (list || []).map((message) => convertGroupMessage(message, db.userId))
-      pageLength = list?.length ?? 0
-    } else {
-      const list = await apiGetPrivateMessageList({
-        receiverId: requestedTargetId,
-        maxId,
-        limit: HISTORY_PAGE_SIZE
-      })
-      earlier = (list || []).map((message) => convertPrivateMessage(message, db.userId))
-      pageLength = list?.length ?? 0
-    }
-
-    // Store 统一负责去重、排序和落库，主聊天面板会同步看到新增的历史消息
-    const persisted = await messageStore.prependMessageList(
+    const pageLength = await loadEarlierMessages(
       requestedType,
       requestedTargetId,
-      earlier,
-      db
+      maxId,
+      HISTORY_PAGE_SIZE
     )
-    if (!persisted) {
-      return
-    }
-    // 返回数量 < limit 视为到顶；仅在历史消息成功落库后关闭入口，失败仍允许重试
+    // 返回数量 < limit 视为到顶；请求或落库失败时保留入口供重试
     if (pageLength < HISTORY_PAGE_SIZE) {
       hasMore.value = false
     }

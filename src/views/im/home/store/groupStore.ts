@@ -150,7 +150,7 @@ export const useGroupStore = defineStore('imGroupStore', {
         const conversationIds = cached.map((group) =>
           getClientConversationId(ImConversationType.GROUP, group.id)
         )
-        const result = await enqueueConversationWrites(conversationIds, async () => {
+        return await enqueueConversationWrites(conversationIds, async () => {
           const activeGroups = cached.filter(
             (group) =>
               !isRelationTerminated(getClientConversationId(ImConversationType.GROUP, group.id))
@@ -158,7 +158,6 @@ export const useGroupStore = defineStore('imGroupStore', {
           this.groups = activeGroups
           return activeGroups.length > 0
         })
-        return result
       } catch (e) {
         console.warn('[IM groupStore] 本地群缓存读取失败', e)
         return false
@@ -218,7 +217,7 @@ export const useGroupStore = defineStore('imGroupStore', {
         if (!cached || cached.length === 0) {
           return null
         }
-        const result = await enqueueConversationWrite(clientConversationId, async () => {
+        return await enqueueConversationWrite(clientConversationId, async () => {
           if (
             groupRelationVersions.get(groupId) !== relationVersion ||
             isRelationTerminated(clientConversationId)
@@ -246,7 +245,6 @@ export const useGroupStore = defineStore('imGroupStore', {
           }
           return cached
         })
-        return result
       } catch (e) {
         console.warn('[IM groupStore] 本地群成员缓存读取失败', { groupId }, e)
         return null
@@ -421,7 +419,11 @@ export const useGroupStore = defineStore('imGroupStore', {
     },
 
     /** 单群刷新：用 /im/group/get 拉一份最新元数据再 upsert，常用于 GROUP_UPDATE 推送后或手动 reload */
-    fetchGroupInfo(groupId: number, force = false, db?: DbClient): Promise<Group | undefined> {
+    fetchGroupInfo(
+      groupId: number,
+      force = false,
+      db: DbClient = getDb()
+    ): Promise<Group | undefined> {
       const relationVersion = ensureGroupRelationVersion(groupId)
       const clientConversationId = getClientConversationId(ImConversationType.GROUP, groupId)
       if (isRelationTerminated(clientConversationId)) {
@@ -444,7 +446,6 @@ export const useGroupStore = defineStore('imGroupStore', {
         !isRelationTerminated(clientConversationId)
       const promise = (async () => {
         try {
-          const client = db || (await initDb())
           const data = await apiGetGroup(groupId)
           if (!data) {
             return undefined
@@ -454,8 +455,8 @@ export const useGroupStore = defineStore('imGroupStore', {
               return undefined
             }
             await this.upsertGroupAndSave(
-              { ...convertGroup(data, client.userId), infoLoaded: true },
-              client
+              { ...convertGroup(data, db.userId), infoLoaded: true },
+              db
             )
             return this.getGroup(groupId)
           })
@@ -722,7 +723,7 @@ export const useGroupStore = defineStore('imGroupStore', {
     },
 
     /** 实际移除群关系；调用方必须持有群会话写 lane */
-    async removeGroupNow(id: number, messageId?: number, db: DbClient = getDb()): Promise<void> {
+    async removeGroupNow(id: number, messageId: number | undefined, db: DbClient): Promise<void> {
       const clientConversationId = getClientConversationId(ImConversationType.GROUP, id)
       const conversationStore = useConversationStore()
       if (!markRelationTerminated(clientConversationId, messageId)) {
@@ -904,7 +905,7 @@ export const useGroupStore = defineStore('imGroupStore', {
       type: number,
       content: string | undefined,
       messageId: number | undefined,
-      db: DbClient = getDb()
+      db: DbClient
     ) {
       let payload: GroupNotificationPayload
       try {
@@ -1004,8 +1005,8 @@ export const useGroupStore = defineStore('imGroupStore', {
     /** 实际恢复群关系；调用方必须持有群会话写 lane */
     async reopenGroupRelationNow(
       groupId: number,
-      messageId?: number,
-      db: DbClient = getDb()
+      messageId: number | undefined,
+      db: DbClient
     ): Promise<boolean> {
       const clientConversationId = getClientConversationId(ImConversationType.GROUP, groupId)
       if (!reopenRelation(clientConversationId, messageId)) {

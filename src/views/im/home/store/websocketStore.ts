@@ -59,8 +59,6 @@ import type {
   Group
 } from '../types'
 
-let connectionUserId = 0
-
 /** FRIEND_DELETE 帧 payload 是否带 clear=true：clear 语义是清会话本身，跳过气泡渲染 */
 const isFriendDeleteWithClear = (frame: ImPrivateMessageNotification): boolean => {
   if (frame.type !== ImContentType.FRIEND_DELETE) {
@@ -219,7 +217,7 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
      * 连接 WebSocket
      * 复用 yudao 内置 /infra/ws 通道，后端通过 sendObject(type, content) 下发
      *
-     * socket 与连接用户绑定，旧连接回调不得进入新连接
+     * socket 实例即连接 owner，旧连接回调不得进入新连接
      */
     connect() {
       // 鉴权用 refreshToken（生命周期更长；access token 过期后服务端会通过 frame 通知重登）
@@ -233,7 +231,6 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
       const existingSocket = this.socket
       if (
         existingSocket &&
-        connectionUserId === currentUserId &&
         (existingSocket.readyState === WebSocket.OPEN ||
           existingSocket.readyState === WebSocket.CONNECTING)
       ) {
@@ -245,9 +242,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
       }
       const url = `${this.buildWsUrl()}/infra/ws?token=${refreshToken}`
       const socket = new WebSocket(url)
-      connectionUserId = currentUserId
       this.socket = socket
-      const isActive = () => this.socket === socket && getCurrentUserId() === currentUserId
+      const isActive = () => this.socket === socket
 
       // 连接建立：标记上线 + 启动心跳保活；重连退避计数归零
       socket.onopen = () => {
@@ -1046,7 +1042,6 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
 
     /** 主动断开（切换用户 / 退出登录时用）：关 socket + 停心跳 + 取消待重连 */
     disconnect() {
-      connectionUserId = 0
       if (this.socket) {
         // close() 异步触发 onclose / onerror，回调里会无条件 reconnect；
         // 主动关闭路径必须先全部解绑，否则 onclose 会引发自动重连，CONNECTING 期间的 in-flight message 也可能被老 onmessage 投递到 stale 上下文
