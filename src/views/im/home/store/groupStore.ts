@@ -2,27 +2,28 @@ import { acceptHMRUpdate, defineStore } from 'pinia'
 import { store } from '@/store'
 
 import {
-  getMyGroupList as apiGetMyGroupList,
+  dissolveGroup as apiDissolveGroup,
   getGroup as apiGetGroup,
+  getMyGroupList as apiGetMyGroupList,
   type ImGroupRespVO
 } from '@/api/im/group'
 import {
   getGroupMember as apiGetGroupMember,
   getGroupMemberList as apiGetGroupMemberList,
+  quitGroup as apiQuitGroup,
   type ImGroupMemberRespVO,
   updateGroupMember as apiUpdateGroupMember
 } from '@/api/im/group/member'
 import { useConversationStore } from './conversationStore'
 import { useGroupRequestStore } from './groupRequestStore'
 import {
+  ImContentType,
   ImConversationType,
   ImGroupMemberRole,
-  ImMessageStatus,
-  ImContentType
+  ImMessageStatus
 } from '../../utils/constants'
 import { CommonStatusEnum } from '@/utils/constants'
 import { getClientConversationId, getDb, initDb, type DbClient } from '../../utils/db'
-import { getCurrentUserId } from '@/utils/auth'
 import { getGroupDisplayName } from '../../utils/user'
 import { type GroupNotificationPayload } from '../../utils/message'
 import type { Group, GroupDO, GroupMember, GroupMemberDO, Message } from '../types'
@@ -49,6 +50,18 @@ function queueGroupListRefreshAfterPending(fetch: () => Promise<unknown>): void 
 
 let groupRelationVersionSequence = 0
 const groupRelationVersions = new Map<number, number>()
+
+/** 获取当前群关系代际，首次访问时创建 */
+function ensureGroupRelationVersion(groupId: number): number {
+  const current = groupRelationVersions.get(groupId)
+  if (current !== undefined) {
+    return current
+  }
+  const next = ++groupRelationVersionSequence
+  groupRelationVersions.set(groupId, next)
+  return next
+}
+
 const pendingGroupInfoFetches = new Map<string, Promise<Group | undefined>>()
 const queuedGroupInfoRefreshes = new Set<string>()
 
@@ -195,7 +208,7 @@ export const useGroupStore = defineStore('imGroupStore', {
         return cachedGroup.members
       }
       try {
-        const relationVersion = groupRelationVersions.get(groupId) || 0
+        const relationVersion = ensureGroupRelationVersion(groupId)
         const clientConversationId = getClientConversationId(ImConversationType.GROUP, groupId)
         const cached = await getDb().getAllByIndex<GroupMemberDO>(
           'groupMembers',
@@ -207,7 +220,7 @@ export const useGroupStore = defineStore('imGroupStore', {
         }
         const result = await enqueueConversationWrite(clientConversationId, async () => {
           if (
-            (groupRelationVersions.get(groupId) || 0) !== relationVersion ||
+            groupRelationVersions.get(groupId) !== relationVersion ||
             isRelationTerminated(clientConversationId)
           ) {
             return null
@@ -284,7 +297,9 @@ export const useGroupStore = defineStore('imGroupStore', {
         ResourceRequestKey.GROUP_LIST,
         async () => {
           const db = await initDb()
-          const fresh = ((await apiGetMyGroupList()) || []).map(convertGroup)
+          const fresh = ((await apiGetMyGroupList()) || []).map((group) =>
+            convertGroup(group, db.userId)
+          )
           const conversationIds = Array.from(
             new Set(
               [...this.groups, ...fresh].map((group) =>
@@ -333,7 +348,7 @@ export const useGroupStore = defineStore('imGroupStore', {
             )
             return this.groups
           })
-          this.preloadMembersForEmptyAvatarGroups()
+          this.preloadMembersForEmptyAvatarGroups(db)
           return committed
         },
         { mode: ResourceRequestMode.SINGLE_FLIGHT, refreshAfterPending: force }
@@ -341,7 +356,7 @@ export const useGroupStore = defineStore('imGroupStore', {
     },
 
     /** 预加载空群头像的成员列表，供 GroupAvatar 异步合成群头像 */
-    preloadMembersForEmptyAvatarGroups() {
+    preloadMembersForEmptyAvatarGroups(db: DbClient = getDb()) {
       for (const group of this.groups) {
         if (
           group.avatar ||
@@ -351,7 +366,7 @@ export const useGroupStore = defineStore('imGroupStore', {
           continue
         }
         const force = !!group.membersLoaded && !group.membersExpired && !group.members?.length
-        this.fetchGroupMemberList(group.id, force).catch((error) => {
+        this.fetchGroupMemberList(group.id, force, db).catch((error) => {
           console.warn('[IM groupStore] 预加载群头像成员失败', { groupId: group.id }, error)
         })
       }
@@ -406,7 +421,12 @@ export const useGroupStore = defineStore('imGroupStore', {
     },
 
     /** 单群刷新：用 /im/group/get 拉一份最新元数据再 upsert，常用于 GROUP_UPDATE 推送后或手动 reload */
-    async fetchGroupInfo(groupId: number, force = false) {
+    fetchGroupInfo(groupId: number, force = false, db?: DbClient): Promise<Group | undefined> {
+      const relationVersion = ensureGroupRelationVersion(groupId)
+      const clientConversationId = getClientConversationId(ImConversationType.GROUP, groupId)
+      if (isRelationTerminated(clientConversationId)) {
+        return Promise.resolve(undefined)
+      }
       const cached = this.getGroup(groupId)
       if (cached?.infoLoaded && !force) {
         return Promise.resolve(cached)
@@ -420,7 +440,7 @@ export const useGroupStore = defineStore('imGroupStore', {
         return pending
       }
       const isRelationCurrent = () =>
-        (groupRelationVersions.get(groupId) || 0) === relationVersion &&
+        groupRelationVersions.get(groupId) === relationVersion &&
         !isRelationTerminated(clientConversationId)
       const promise = (async () => {
         try {
@@ -433,7 +453,10 @@ export const useGroupStore = defineStore('imGroupStore', {
             if (!isRelationCurrent()) {
               return undefined
             }
-            await this.upsertGroupAndSave({ ...convertGroup(data), infoLoaded: true }, client)
+            await this.upsertGroupAndSave(
+              { ...convertGroup(data, client.userId), infoLoaded: true },
+              client
+            )
             return this.getGroup(groupId)
           })
         } catch (e) {
@@ -456,14 +479,17 @@ export const useGroupStore = defineStore('imGroupStore', {
     },
 
     /** 按群拉取成员（in-memory 缓存 + 并发去重，force=true 强刷）+ 落 IDB */
-    fetchGroupMemberList(groupId: number, force = false): Promise<GroupMember[]> {
+    fetchGroupMemberList(
+      groupId: number,
+      force = false,
+      db: DbClient = getDb()
+    ): Promise<GroupMember[]> {
       // in-memory "完整"加载过才命中——单成员补齐写入的 partial members 不在此返回（membersLoaded=false）
       const cached = this.getGroup(groupId)
       if (cached && cached.members && cached.membersLoaded && !cached.membersExpired && !force) {
         return Promise.resolve(cached.members)
       }
-      const userId = db?.userId || getCurrentUserId()
-      const relationVersion = groupRelationVersions.get(groupId) || 0
+      const relationVersion = ensureGroupRelationVersion(groupId)
       const clientConversationId = getClientConversationId(ImConversationType.GROUP, groupId)
       const key = pendingMemberKey(groupId, relationVersion)
       const inflight = pendingMemberFetches.get(key)
@@ -474,7 +500,8 @@ export const useGroupStore = defineStore('imGroupStore', {
         return inflight
       }
       const promise = (async () => {
-        const client = db || (await initDb())
+        const client = db
+        const userId = db.userId
         // 拉接口 + 单 pass 转换：同时捕获 me 的原始 VO，给下面回填 user-per-group 字段（silent / groupRemark）用
         const list = await apiGetGroupMemberList(groupId)
         let meRaw: ImGroupMemberRespVO | undefined
@@ -489,7 +516,7 @@ export const useGroupStore = defineStore('imGroupStore', {
 
         return await enqueueConversationWrite(clientConversationId, async () => {
           if (
-            (groupRelationVersions.get(groupId) || 0) !== relationVersion ||
+            groupRelationVersions.get(groupId) !== relationVersion ||
             isRelationTerminated(clientConversationId)
           ) {
             return []
@@ -546,7 +573,7 @@ export const useGroupStore = defineStore('imGroupStore', {
         if (pendingMemberFetches.get(key) === promise) {
           const shouldRefresh =
             queuedMemberRefreshes.has(key) &&
-            (groupRelationVersions.get(groupId) || 0) === relationVersion &&
+            groupRelationVersions.get(groupId) === relationVersion &&
             !isRelationTerminated(clientConversationId)
           pendingMemberFetches.delete(key)
           queuedMemberRefreshes.delete(key)
@@ -573,7 +600,7 @@ export const useGroupStore = defineStore('imGroupStore', {
       if (cached) {
         return Promise.resolve(cached)
       }
-      const relationVersion = groupRelationVersions.get(groupId) || 0
+      const relationVersion = ensureGroupRelationVersion(groupId)
       const clientConversationId = getClientConversationId(ImConversationType.GROUP, groupId)
       const key = pendingSingleMemberKey(groupId, relationVersion, memberUserId)
       const inflight = pendingSingleMemberFetches.get(key)
@@ -589,7 +616,7 @@ export const useGroupStore = defineStore('imGroupStore', {
 
         return await enqueueConversationWrite(clientConversationId, async () => {
           if (
-            (groupRelationVersions.get(groupId) || 0) !== relationVersion ||
+            groupRelationVersions.get(groupId) !== relationVersion ||
             isRelationTerminated(clientConversationId)
           ) {
             return null
@@ -664,24 +691,71 @@ export const useGroupStore = defineStore('imGroupStore', {
     },
 
     /** 本地移除群缓存和群会话；群解散（GROUP_DEL）、退群、被踢都复用 */
-    removeGroup(id: number) {
-      // 本地硬删（区别于好友删除的软删保留记录）；级联清群聊会话避免列表里留死群
-      this.groups = this.groups.filter((g) => g.id !== id)
+    removeGroup(
+      id: number,
+      expectedRelationVersion = ensureGroupRelationVersion(id),
+      db: DbClient = getDb()
+    ) {
+      const clientConversationId = getClientConversationId(ImConversationType.GROUP, id)
+      return enqueueConversationWrite(clientConversationId, async () => {
+        if (groupRelationVersions.get(id) !== expectedRelationVersion) {
+          return
+        }
+        await this.removeGroupNow(id, undefined, db)
+      })
+    },
+
+    /** 退出群聊并清理本地数据 */
+    async quitGroup(id: number): Promise<void> {
+      const relationVersion = ensureGroupRelationVersion(id)
+      const db = getDb()
+      await apiQuitGroup(id)
+      await this.removeGroup(id, relationVersion, db)
+    },
+
+    /** 解散群聊并清理本地数据 */
+    async dissolveGroup(id: number): Promise<void> {
+      const relationVersion = ensureGroupRelationVersion(id)
+      const db = getDb()
+      await apiDissolveGroup(id)
+      await this.removeGroup(id, relationVersion, db)
+    },
+
+    /** 实际移除群关系；调用方必须持有群会话写 lane */
+    async removeGroupNow(id: number, messageId?: number, db: DbClient = getDb()): Promise<void> {
+      const clientConversationId = getClientConversationId(ImConversationType.GROUP, id)
       const conversationStore = useConversationStore()
       if (!markRelationTerminated(clientConversationId, messageId)) {
         return
       }
       groupRelationVersions.set(id, ++groupRelationVersionSequence)
-      try {
-        await db.transaction(['groups', 'groupMembers'], 'readwrite', async (tx) => {
+      const currentGroups = this.groups
+      const currentConversation = conversationStore.getConversation(ImConversationType.GROUP, id)
+      // 群、成员和会话终态必须一次提交，避免重启后只恢复其中一侧
+      const hiddenConversation = await db.transaction(
+        ['groups', 'groupMembers', 'conversations'],
+        'readwrite',
+        async (tx) => {
           await db.delete('groups', id, tx)
           await db.deleteByIndex('groupMembers', 'groupId', id, tx)
-        })
-      } catch (e) {
-        console.warn(`[IM groupStore] 群缓存删除失败 (groupId=${id})`, e)
+          return conversationStore.saveHiddenConversationRecord(
+            ImConversationType.GROUP,
+            id,
+            tx,
+            db
+          )
+        }
+      )
+      // 事务期间若新 Store 投影已接管，则只保留已提交的旧 DB 终态
+      if (this.groups === currentGroups) {
+        this.groups = currentGroups.filter((group) => group.id !== id)
       }
-      this.groups = this.groups.filter((group) => group.id !== id)
-      await conversationStore.hideConversationNow(ImConversationType.GROUP, id, db)
+      if (
+        hiddenConversation &&
+        conversationStore.getConversation(ImConversationType.GROUP, id) === currentConversation
+      ) {
+        conversationStore.publishHiddenConversationProjection(hiddenConversation)
+      }
     },
 
     /** 切换免打扰：推后端 + 落本地 + 同步会话列表的 silent，避免 silent 图标 / 总未读 / 提示音判断与设置漂移；和 friendStore.setFriendSilent 对齐 */
@@ -746,7 +820,7 @@ export const useGroupStore = defineStore('imGroupStore', {
     },
 
     /** 本地剔除群成员（GROUP_MEMBER_QUIT / KICK 事件）；不命中则等 fetchGroupMemberList 兜底 */
-    removeLocalGroupMemberList(groupId: number, userIds: number[]) {
+    removeLocalGroupMemberList(groupId: number, userIds: number[], db: DbClient = getDb()) {
       const group = this.getGroup(groupId)
       if (!group?.members?.length || !userIds.length) {
         return
@@ -778,7 +852,7 @@ export const useGroupStore = defineStore('imGroupStore', {
     },
 
     /** 局部更新群字段（name / notice / avatar 等）；未命中本地缓存时静默忽略，等 fetchGroupList 兜底；新值跟旧值都相同时跳过响应式 + IDB 写 */
-    updateGroupFields(groupId: number, fields: Partial<Group>) {
+    updateGroupFields(groupId: number, fields: Partial<Group>, db: DbClient = getDb()) {
       const group = this.getGroup(groupId)
       if (!group) {
         return
@@ -1229,20 +1303,21 @@ export const useGroupStore = defineStore('imGroupStore', {
       pendingSingleMemberFetches.clear()
       pendingGroupInfoFetches.clear()
       queuedGroupInfoRefreshes.clear()
-      groupRelationVersionSequence = 0
       groupRelationVersions.clear()
     }
   }
 })
 
-function convertGroup(group: ImGroupRespVO): Group {
+function convertGroup(group: ImGroupRespVO, currentUserId: number): Group {
   return {
     id: group.id,
     name: group.name,
     avatar: group.avatar,
     notice: group.notice,
     ownerUserId: group.ownerUserId,
-    pinnedMessages: group.pinnedMessages?.map((message) => convertGroupMessageVO(message)),
+    pinnedMessages: group.pinnedMessages?.map((message) =>
+      convertGroupMessageVO(message, currentUserId)
+    ),
     mutedAll: group.mutedAll,
     banned: group.banned,
     joinApproval: group.joinApproval,
@@ -1254,9 +1329,9 @@ function convertGroup(group: ImGroupRespVO): Group {
 
 /** 后端 ImGroupMessageRespVO -> 前端 Message：补 targetId / selfSend / sendTime 等派生字段 */
 function convertGroupMessageVO(
-  message: NonNullable<ImGroupRespVO['pinnedMessages']>[number]
+  message: NonNullable<ImGroupRespVO['pinnedMessages']>[number],
+  currentUserId: number
 ): Message {
-  const currentUserId = getCurrentUserId()
   return {
     id: message.id,
     clientMessageId: message.clientMessageId || '',

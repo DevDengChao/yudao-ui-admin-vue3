@@ -214,10 +214,10 @@ onUnmounted(async () => {
   cancelPull()
   rtcStore.reset()
   rtcStore.clearGroupCallCache()
-  await conversationStore.flushConversationDraftSave()
   // 模块级单例 audio 不会随视图卸载自动停，主动停掉避免切路由后语音继续响
   voicePlayer.stop()
   window.removeEventListener('beforeunload', onBeforeUnload)
+  await conversationStore.flushConversationDraftSave()
   // 旧壳等待草稿期间可能已有新壳挂载，不能停止新壳复用的物理资源
   if (activeImShellOwner !== shellOwner) {
     return
@@ -225,7 +225,11 @@ onUnmounted(async () => {
   // TODO @AI：【done】先释放旧壳 owner；后续 await 后若新壳接管，则停止清理共享资源
   activeImShellOwner = null
   wsStore.disconnect()
-  await Promise.all([clearResourceRequests(), clearMessageSyncState()])
+  await clearResourceRequests()
+  if (activeImShellOwner) {
+    return
+  }
+  await clearMessageSyncState(() => !activeImShellOwner)
   if (activeImShellOwner) {
     return
   }
@@ -260,10 +264,6 @@ watch(
     try {
       // 本地清零未读 + 上报后端已读，让其它端 / 对方 UI 同步
       await readActive()
-      const active = conversationStore.activeConversation
-      if (active?.type !== type || active.targetId !== targetId) {
-        return
-      }
       // 私聊补一次"对方已读到哪条"，弥补离线 / 多端漏掉的 RECEIPT 推送
       if (type === ImConversationType.PRIVATE) {
         await syncPrivateReadStatus(targetId)

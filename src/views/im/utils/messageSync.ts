@@ -120,14 +120,17 @@ export function isRelationTerminated(clientConversationId: string): boolean {
   return relationStates.get(clientConversationId)?.terminated === true
 }
 
-/** 排空当前 IM 运行时的消息写入并清理关系终态 */
-export async function clearMessageSyncState(): Promise<void> {
+/** 排空当前 IM 运行时的消息写入，并在调用方仍允许时清理关系终态 */
+export async function clearMessageSyncState(shouldClear: () => boolean): Promise<void> {
   const barrier = writeState.barrierTail
   const tails = Array.from(writeState.tails.entries())
   await Promise.all([
     barrier.catch(() => undefined),
     ...tails.map(([, task]) => task.catch(() => undefined))
   ])
+  if (!shouldClear()) {
+    return
+  }
   relationStates.clear()
   if (writeState.barrierTail === barrier) {
     writeState.barrierTail = Promise.resolve()

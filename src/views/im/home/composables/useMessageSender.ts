@@ -21,8 +21,8 @@ import {
 } from '../../utils/message'
 import { ImContentType, ImMessageStatus, ImConversationType } from '../../utils/constants'
 import { MESSAGE_PRIVATE_READ_ENABLED, MESSAGE_GROUP_READ_ENABLED } from '../../utils/config'
-import { getClientConversationId } from '../../utils/db'
-import type { Conversation, Message } from '../types'
+import { getClientConversationId, getDb, type DbClient } from '../../utils/db'
+import type { Conversation, Message, MessageDO } from '../types'
 import { getCurrentUserId } from '@/utils/auth'
 
 /** 非文本消息的扩展选项（通用） */
@@ -46,6 +46,7 @@ interface SendExtOptions {
    * 这里跳过 buildLocalMessage / insertMessage，直接拿这个 id 走 ackMessage 收尾，避免重复插入两条
    */
   existingClientMessageId?: string
+  db?: DbClient // 发送任务开始时捕获的数据库；媒体上传完成后继续写回同一用户分区
 }
 
 /**
@@ -104,6 +105,7 @@ export const useMessageSender = () => {
     if (!realTarget) {
       return false
     }
+    const db = options?.db ?? getDb()
 
     // 2. 准备 clientMessageId：媒体上传链路在 step 1 已经 insertMessage 占位，这里直接复用 id；其余场景走默认乐观插入
     let clientMessageId: string
@@ -111,10 +113,15 @@ export const useMessageSender = () => {
       clientMessageId = options.existingClientMessageId
       // 占位若已被删除（上传期间用户右键删除 / 撤回 / removeMessage 等）则放弃发送，
       // 否则 sendRaw 仍会把消息推到服务端，导致"本地无气泡 / 对方却收到一条"
-      const stillExists = messageStore
-        .getMessageList(conversation.type, realTarget)
-        .some((message) => message.clientMessageId === clientMessageId && !message._ackMerging)
-      if (!stillExists) {
+      const cachedMessage = messageStore
+        .getMessages(getClientConversationId(conversation.type, realTarget))
+        .find((message) => message.clientMessageId === clientMessageId)
+      const storedMessage = await db.getByIndex<{ clientMessageId: string }>(
+        'messages',
+        'clientMessageId',
+        clientMessageId
+      )
+      if (cachedMessage?._ackMerging || !storedMessage) {
         return false
       }
     } else {
@@ -133,7 +140,7 @@ export const useMessageSender = () => {
         name: conversation.name || String(realTarget),
         avatar: conversation.avatar || ''
       }
-      void messageStore.insertMessage(conversationInfo, message).catch(() => undefined)
+      void messageStore.insertMessage(conversationInfo, message, db).catch(() => undefined)
     }
 
     // 3. 发送请求：按会话类型分发到不同接口；成功后 ackMessage 更新为 NORMAL，失败更新为 FAILED
@@ -146,13 +153,19 @@ export const useMessageSender = () => {
           content
         })
         void messageStore
-          .ackMessage(conversation.type, realTarget, clientMessageId, {
-            id: data.id,
-            sendTime: new Date(data.sendTime).getTime(),
-            status: data.status,
-            receiptStatus: data.receiptStatus,
-            content: data.content
-          })
+          .ackMessage(
+            conversation.type,
+            realTarget,
+            clientMessageId,
+            {
+              id: data.id,
+              sendTime: new Date(data.sendTime).getTime(),
+              status: data.status,
+              receiptStatus: data.receiptStatus,
+              content: data.content
+            },
+            db
+          )
           .catch(() => undefined)
       } else if (conversation.type === ImConversationType.GROUP) {
         const data = await apiSendGroupMessage({
@@ -164,25 +177,48 @@ export const useMessageSender = () => {
           receipt: options?.receipt
         })
         void messageStore
-          .ackMessage(conversation.type, realTarget, clientMessageId, {
-            id: data.id,
-            sendTime: new Date(data.sendTime).getTime(),
-            status: data.status,
-            receiptStatus: data.receiptStatus,
-            readCount: data.readCount,
-            content: data.content
-          })
+          .ackMessage(
+            conversation.type,
+            realTarget,
+            clientMessageId,
+            {
+              id: data.id,
+              sendTime: new Date(data.sendTime).getTime(),
+              status: data.status,
+              receiptStatus: data.receiptStatus,
+              readCount: data.readCount,
+              content: data.content
+            },
+            db
+          )
           .catch(() => undefined)
       }
       return true
     } catch (e) {
       console.error('[IM] 消息发送失败', { type, realTarget, clientMessageId }, e)
-      void messageStore
-        .ackMessage(conversation.type, realTarget, clientMessageId, {
-          status: ImMessageStatus.FAILED
-        })
+      await messageStore
+        .ackMessage(
+          conversation.type,
+          realTarget,
+          clientMessageId,
+          {
+            status: ImMessageStatus.FAILED
+          },
+          db
+        )
         .catch(() => undefined)
-      return false
+      const appliedMessage = messageStore
+        .getMessages(getClientConversationId(conversation.type, realTarget))
+        .find((message) => message.clientMessageId === clientMessageId)
+      if (appliedMessage) {
+        return appliedMessage.status === ImMessageStatus.NORMAL && !!appliedMessage.id
+      }
+      const storedMessage = await db.getByIndex<MessageDO>(
+        'messages',
+        'clientMessageId',
+        clientMessageId
+      )
+      return storedMessage?.status === ImMessageStatus.NORMAL && !!storedMessage.id
     }
   }
 
@@ -231,6 +267,7 @@ export const useMessageSender = () => {
     if (!conversation) {
       return
     }
+    const db = getDb()
     const loadedMaxMessageId = messageStore
       .getMessages(getClientConversationId(conversation.type, conversation.targetId))
       .reduce<number>(
@@ -245,14 +282,24 @@ export const useMessageSender = () => {
       maxMessageId
     )
     if (readReported) {
-      conversationStore.markConversationRead(conversation.type, conversation.targetId)
+      conversationStore.markConversationRead(
+        conversation.type,
+        conversation.targetId,
+        undefined,
+        db
+      )
       return
     }
     const isPrivate = conversation.type === ImConversationType.PRIVATE
     const isGroup = conversation.type === ImConversationType.GROUP
     const isChannel = conversation.type === ImConversationType.CHANNEL
     // 本地标记已读：未读数清零（UI 立刻响应）
-    conversationStore.markConversationRead(conversation.type, conversation.targetId, maxMessageId)
+    conversationStore.markConversationRead(
+      conversation.type,
+      conversation.targetId,
+      maxMessageId,
+      db
+    )
     if (!maxMessageId) {
       return
     }
@@ -277,7 +324,8 @@ export const useMessageSender = () => {
       conversationStore.markConversationReadReported(
         conversation.type,
         conversation.targetId,
-        maxMessageId
+        maxMessageId,
+        db
       )
     } catch (e) {
       console.error(
@@ -303,15 +351,19 @@ export const useMessageSender = () => {
     if (!MESSAGE_PRIVATE_READ_ENABLED) {
       return
     }
+    const db = getDb()
     try {
       const cachedMaxReadId = messageStore.getPrivateReadMaxId(peerId)
       if (cachedMaxReadId !== undefined) {
         if (cachedMaxReadId > 0) {
-          await messageStore.applyMessageReadReceipt({
-            conversationType: ImConversationType.PRIVATE,
-            targetId: peerId,
-            privateReadMaxId: cachedMaxReadId
-          })
+          await messageStore.applyMessageReadReceipt(
+            {
+              conversationType: ImConversationType.PRIVATE,
+              targetId: peerId,
+              privateReadMaxId: cachedMaxReadId
+            },
+            db
+          )
         }
         return
       }
@@ -322,11 +374,14 @@ export const useMessageSender = () => {
         return
       }
       // applyMessageReadReceipt 内部把 ≤ maxReadId 的本端消息回执更新为 DONE
-      await messageStore.applyMessageReadReceipt({
-        conversationType: ImConversationType.PRIVATE,
-        targetId: peerId,
-        privateReadMaxId: maxReadId
-      })
+      await messageStore.applyMessageReadReceipt(
+        {
+          conversationType: ImConversationType.PRIVATE,
+          targetId: peerId,
+          privateReadMaxId: maxReadId
+        },
+        db
+      )
     } catch (e) {
       console.warn('[IM] 拉取对方已读位置失败', { peerId }, e)
     }

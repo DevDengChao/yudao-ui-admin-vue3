@@ -218,8 +218,7 @@
           {{ keyword || activeFilter ? '没有匹配的消息' : '暂无消息' }}
         </div>
 
-        <!-- 加载更早消息：列表底部 trigger（reverse 后最早的在最下，按钮放底部更自然）；
-             filter 命中 0 条时仍保留 —— 加载更早可能带回匹配内容 -->
+        <!-- 消息倒序展示，加载入口放在历史消息一侧；筛选无结果时也保留，继续加载可能命中 -->
         <div
           v-if="hasMore && allMessages.length > 0"
           class="py-3 text-center border-t border-t-solid border-[var(--el-border-color-lighter)]"
@@ -228,7 +227,7 @@
             加载更早消息
           </el-button>
         </div>
-        <!-- "没有更早" 只在已有匹配项时露出，避免和上面"没有匹配的消息"空态文案重叠 -->
+        <!-- 已有消息但没有更多历史时显示到底提示，避免与上方的无匹配空态重复 -->
         <div
           v-else-if="!hasMore && currentList.length > 0"
           class="py-3 text-12px text-center text-[var(--el-text-color-disabled)]"
@@ -288,7 +287,7 @@ import {
   type MergeMessage
 } from '@/views/im/utils/message'
 import type { Message } from '@/views/im/home/types'
-import { getClientConversationId } from '@/views/im/utils/db'
+import { getClientConversationId, getDb } from '@/views/im/utils/db'
 import UserAvatar from '../../../../components/user/UserAvatar.vue'
 import MessageBubble from './MessageBubble.vue'
 import GroupMember, { type GroupMemberLite } from '../../../../components/group/GroupMember.vue'
@@ -541,39 +540,30 @@ const HISTORY_PAGE_SIZE = 50
 const loadingMore = ref(false)
 const hasMore = ref(true)
 
-/**
- * 加载更早消息：拿当前最早一条 id 作 maxId（不含），调 list 接口拉一页 + convert + prepend
- *
- * - 未对接 list 接口的 type / keyword / sender 过滤参数：后端只支持 maxId + limit 游标分页，
- *   tab 筛选在前端做（数据来回到本地后过滤）
- * - 本地占位跳过：后端没法按 messageId 查
- * - 返回数量 < limit 视为到顶
- */
+/** 加载更早消息：后端仅支持 maxId + limit 游标，筛选仍在本地完成 */
 async function loadEarlier() {
-  // 重入 / 到顶 / 无会话 早退：避免重复请求或在 conversation 切换间隙触发
+  // 防止重复请求，并避开会话尚未就绪的切换间隙
   if (loadingMore.value || !hasMore.value || !conversation.value) {
     return
   }
-  // 仅 PRIVATE / GROUP 走分页接口；CHANNEL 单向广播、没有 list 接口，落到 else 会误调私聊接口（receiverId 传 channelId）
+  // CHANNEL 没有历史消息接口
   const requestedType = conversation.value.type
   if (requestedType !== ImConversationType.PRIVATE && requestedType !== ImConversationType.GROUP) {
     return
   }
   const requestedTargetId = conversation.value.targetId
   const requestedIsGroup = requestedType === ImConversationType.GROUP
+  const db = getDb()
 
   loadingMore.value = true
   try {
-    // 算 maxId（不含，作为后端游标）：取当前会话本地缓存里最早一条服务端 id；
-    // 本地乐观占位消息没有服务端 id，要剔除
-    // 全是占位 / 列表为空时 reduce 不更新初值（POSITIVE_INFINITY），转成 undefined → 后端从最新拉
+    // 本地占位没有服务端 id，不参与历史游标
     const earliestId = allMessages.value
       .filter((message) => !!message.id && message.id > 0)
       .reduce((min, message) => Math.min(min, message.id || min), Number.POSITIVE_INFINITY)
     const maxId = Number.isFinite(earliestId) ? earliestId : undefined
 
-    // 调后端 list 接口：私聊 / 群聊接口签名不同，分支调度；返回结果用 useMessagePuller
-    // 暴露的 convert 函数转成本地 Message（与 puller 同一份字段映射，避免分歧）
+    // 私聊和群聊接口参数不同，但统一复用 puller 的消息转换规则
     let earlier: Message[] = []
     let pageLength = 0
     if (requestedIsGroup) {
@@ -582,7 +572,7 @@ async function loadEarlier() {
         maxId,
         limit: HISTORY_PAGE_SIZE
       })
-      earlier = (list || []).map(convertGroupMessage)
+      earlier = (list || []).map((message) => convertGroupMessage(message, db.userId))
       pageLength = list?.length ?? 0
     } else {
       const list = await apiGetPrivateMessageList({
@@ -590,16 +580,16 @@ async function loadEarlier() {
         maxId,
         limit: HISTORY_PAGE_SIZE
       })
-      earlier = (list || []).map(convertPrivateMessage)
+      earlier = (list || []).map((message) => convertPrivateMessage(message, db.userId))
       pageLength = list?.length ?? 0
     }
 
-    // 合并到 messageStore：prependMessageList 内部去重 + 升序合并 + 落 IndexedDB；
-    // 主聊天面板的 messages 是同一份引用，老消息也会一起出现在主面板里（符合预期）
+    // Store 统一负责去重、排序和落库，主聊天面板会同步看到新增的历史消息
     const persisted = await messageStore.prependMessageList(
       requestedType,
       requestedTargetId,
-      earlier
+      earlier,
+      db
     )
     if (!persisted) {
       return

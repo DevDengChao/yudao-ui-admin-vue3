@@ -205,7 +205,6 @@ const {
   uploadAndSendMedia,
   insertMediaPlaceholder,
   markMediaFailed,
-  commitMediaPlaceholder,
   createUploadProgressHandler,
   requireMediaHandler
 } = useMediaUploader()
@@ -1068,6 +1067,7 @@ async function uploadAndSendVideo(file: File) {
   const buildPlaceholderContent = (blobUrl: string): string =>
     serializeMessage(withQuotePayload(videoHandler.build(file, blobUrl, {}), replyQuote))
   let clientMessageId: string
+  let commitPlaceholder: ((realContent: string) => Promise<void>) | undefined
   try {
     const placeholder = await insertMediaPlaceholder({
       file,
@@ -1079,6 +1079,7 @@ async function uploadAndSendVideo(file: File) {
       return
     }
     clientMessageId = placeholder.clientMessageId
+    commitPlaceholder = placeholder.commit
   } catch (error) {
     console.error('[IM] 视频消息占位写入失败', error)
     message.warning('消息保存失败，请重试')
@@ -1157,15 +1158,10 @@ async function uploadAndSendVideo(file: File) {
       replyQuote
     )
   )
-  await commitMediaPlaceholder({
-    type: ImContentType.VIDEO,
-    conversation,
-    clientMessageId,
-    realContent
-  })
+  await commitPlaceholder(realContent)
 }
 
-/** 视频选完即上传 + 发送 VIDEO 消息（不放入 editor，独立链路：probe + 双上传，最终走 commitMediaPlaceholder 收尾） */
+/** 视频选完即上传 + 发送 VIDEO 消息（不放入 editor，独立链路：probe + 双上传，最终由占位 handle 收尾） */
 async function onVideoPicked(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]

@@ -5,6 +5,7 @@ import { getCurrentUserId } from '@/utils/auth'
 
 import { useMessageStore } from '../store/messageStore'
 import { useMessageSender } from './useMessageSender'
+import { getDb, type DbClient } from '../../utils/db'
 import { ImMessageStatus, ImContentType } from '../../utils/constants'
 import {
   MESSAGE_FILE_MAX_MB,
@@ -168,10 +169,30 @@ export const useMediaUploader = () => {
     conversation: Conversation
     buildContent: (blobUrl: string) => string
     existingClientMessageId?: string
-  }): Promise<{ clientMessageId: string; blobUrl: string } | undefined> => {
+  }): Promise<
+    | {
+        clientMessageId: string
+        blobUrl: string
+        commit: (realContent: string) => Promise<void>
+      }
+    | undefined
+  > => {
     const { conversation } = opts
+    const db = getDb()
     const blobUrl = URL.createObjectURL(opts.file)
     const clientMessageId = opts.existingClientMessageId || generateClientMessageId()
+    const result = {
+      clientMessageId,
+      blobUrl,
+      commit: (realContent: string) =>
+        commitMediaPlaceholder({
+          type: opts.type,
+          conversation,
+          clientMessageId,
+          realContent,
+          db
+        })
+    }
     if (opts.existingClientMessageId) {
       messageStore.patchMessage(conversation.type, conversation.targetId, clientMessageId, {
         content: opts.buildContent(blobUrl),
@@ -179,7 +200,7 @@ export const useMediaUploader = () => {
         uploadProgress: 0,
         _localFile: opts.file
       })
-      return { clientMessageId, blobUrl }
+      return result
     }
     const placeholder: Message = {
       clientMessageId,
@@ -201,7 +222,8 @@ export const useMediaUploader = () => {
           name: conversation.name || String(conversation.targetId),
           avatar: conversation.avatar || ''
         },
-        placeholder
+        placeholder,
+        db
       )
       if (!inserted) {
         URL.revokeObjectURL(blobUrl)
@@ -211,7 +233,7 @@ export const useMediaUploader = () => {
       URL.revokeObjectURL(blobUrl)
       throw error
     }
-    return { clientMessageId, blobUrl }
+    return result
   }
 
   /**
@@ -281,6 +303,7 @@ export const useMediaUploader = () => {
     conversation: Conversation
     clientMessageId: string
     realContent: string
+    db: DbClient
   }): Promise<void> => {
     messageStore.patchMessage(
       opts.conversation.type,
@@ -292,7 +315,8 @@ export const useMediaUploader = () => {
     await sendRaw(opts.type, opts.realContent, {
       existingClientMessageId: opts.clientMessageId,
       targetId: opts.conversation.targetId,
-      conversation: opts.conversation
+      conversation: opts.conversation,
+      db: opts.db
     })
   }
 
@@ -317,9 +341,9 @@ export const useMediaUploader = () => {
       serializeMessage(withQuotePayload(handler.build(opts.file, url, context), opts.quote))
 
     // 1. 立即占位
-    let clientMessageId: string
+    let placeholder: Awaited<ReturnType<typeof insertMediaPlaceholder>>
     try {
-      const placeholder = await insertMediaPlaceholder({
+      placeholder = await insertMediaPlaceholder({
         file: opts.file,
         type: opts.type,
         conversation,
@@ -329,12 +353,12 @@ export const useMediaUploader = () => {
       if (!placeholder) {
         return ''
       }
-      clientMessageId = placeholder.clientMessageId
     } catch (error) {
       console.error('[IM] 媒体消息占位写入失败', error)
       message.warning('消息保存失败，请重试')
       return ''
     }
+    const clientMessageId = placeholder.clientMessageId
 
     // 2. 上传：进度回调 patch uploadProgress；失败保留 _localFile 供重试
     let url: string | undefined
@@ -361,12 +385,7 @@ export const useMediaUploader = () => {
     }
 
     // 3. patch content + sendRaw 收尾
-    await commitMediaPlaceholder({
-      type: opts.type,
-      conversation,
-      clientMessageId,
-      realContent: buildContent(url)
-    })
+    await placeholder.commit(buildContent(url))
     return clientMessageId
   }
 
@@ -374,7 +393,6 @@ export const useMediaUploader = () => {
     uploadAndSendMedia,
     insertMediaPlaceholder,
     markMediaFailed,
-    commitMediaPlaceholder,
     createUploadProgressHandler,
     getMediaKind,
     requireMediaHandler

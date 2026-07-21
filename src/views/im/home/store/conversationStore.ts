@@ -1,7 +1,6 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { debounce } from 'lodash-es'
 import { store } from '@/store'
-import { getCurrentUserId } from '@/utils/auth'
 
 import { CONVERSATION_RECENT_FORWARD_MAX } from '../../utils/config'
 import {
@@ -329,7 +328,7 @@ export const useConversationStore = defineStore('imConversationStore', {
         }
         const nextConversations = conversations.map(fromConversationDO)
         this.conversationReads = nextConversationReads
-        await this.applyLocalConversationReads(nextConversations)
+        await this.applyLocalConversationReads(nextConversations, db)
         this.conversations = nextConversations
         if (Array.isArray(recent)) {
           this.recentForwardConversationKeys = recent.slice(0, CONVERSATION_RECENT_FORWARD_MAX)
@@ -385,7 +384,7 @@ export const useConversationStore = defineStore('imConversationStore', {
     },
 
     /** 应用本地会话读位置 */
-    async applyLocalConversationReads(conversations?: Conversation[]) {
+    async applyLocalConversationReads(conversations?: Conversation[], db: DbClient = getDb()) {
       const targetConversations = conversations || this.conversations
       const changedConversations: Conversation[] = []
       for (const conversation of targetConversations) {
@@ -396,25 +395,20 @@ export const useConversationStore = defineStore('imConversationStore', {
         if (!record && !needsMentionBackfill) {
           continue
         }
-        const messages = await getDb().getAllByIndex<MessageDO>(
+        const messages = await db.getAllByIndex<MessageDO>(
           'messages',
           'clientConversationId',
           getClientConversationId(conversation.type, conversation.targetId)
         )
         const changed = record
-          ? this.applyReadToConversation(
-              conversation,
-              record.messageId,
-              messages,
-              getCurrentUserId()
-            )
-          : backfillConversationMentionIds(conversation, messages, getCurrentUserId())
+          ? this.applyReadToConversation(conversation, record.messageId, messages, db.userId)
+          : backfillConversationMentionIds(conversation, messages, db.userId)
         if (changed) {
           changedConversations.push(conversation)
         }
       }
       if (changedConversations.length > 0) {
-        await this.saveConversationRecord(changedConversations, undefined)
+        await this.saveConversationRecord(changedConversations, undefined, db)
       }
     },
 
@@ -545,7 +539,7 @@ export const useConversationStore = defineStore('imConversationStore', {
             conversation,
             messageId,
             await getStoredMessages(),
-            getCurrentUserId()
+            db.userId
           )
         ) {
           changedConversations.set(clientConversationId, conversation)
@@ -865,14 +859,9 @@ export const useConversationStore = defineStore('imConversationStore', {
     },
 
     /** 删除会话 */
-    async removeConversation(
-      type: number,
-      targetId: number,
-      beforeRemove?: () => Promise<void> | void,
-      db: DbClient = getDb()
-    ) {
+    async removeConversation(type: number, targetId: number) {
+      const db = getDb()
       await enqueueConversationWrite(getClientConversationId(type, targetId), async () => {
-        await beforeRemove?.()
         await this.removeConversationNow(type, targetId, db)
       })
     },
@@ -888,25 +877,55 @@ export const useConversationStore = defineStore('imConversationStore', {
       await this.hideConversationNow(type, targetId, db)
     },
 
-    /** 隐藏会话但保留消息；用于退群、被踢和群解散终态 */
-    async hideConversationNow(type: number, targetId: number, db: DbClient = getDb()) {
-      const conversation = this.getConversation(type, targetId)
+    /** 保存隐藏会话投影但不发布 Store；用于和其它终态写入共用事务 */
+    async saveHiddenConversationRecord(
+      type: number,
+      targetId: number,
+      tx?: DbTransaction,
+      db: DbClient = getDb()
+    ): Promise<Conversation | undefined> {
+      const clientConversationId = getClientConversationId(type, targetId)
+      const current = this.getConversation(type, targetId)
+      const stored = current
+        ? undefined
+        : await db.get<ConversationDO>('conversations', clientConversationId, tx)
+      const conversation = current || (stored ? fromConversationDO(stored) : undefined)
+      if (!conversation) {
+        return undefined
+      }
+      const projection = { ...conversation, deleted: true, draft: undefined }
+      await this.saveConversationRecord(projection, tx, db)
+      return projection
+    },
+
+    /** 发布已成功持久化的隐藏会话投影 */
+    publishHiddenConversationProjection(projection: Conversation): void {
+      const conversation = this.getConversation(projection.type, projection.targetId)
       if (!conversation) {
         return
       }
       pendingDraftConversations.delete(conversation)
-      const nextConversation = { ...conversation, deleted: true, draft: undefined }
-      await this.saveConversationRecord(nextConversation, undefined, db)
       if (this.activeConversation === conversation) {
         this.activeConversation = null
         this.activeMentionMessageId = undefined
       }
-      Object.assign(conversation, nextConversation)
+      Object.assign(conversation, projection)
+    },
+
+    /** 隐藏会话但保留消息；用于退群、被踢和群解散终态 */
+    async hideConversationNow(type: number, targetId: number, db: DbClient = getDb()) {
+      const projection = await this.saveHiddenConversationRecord(type, targetId, undefined, db)
+      if (projection) {
+        this.publishHiddenConversationProjection(projection)
+      }
     },
 
     /** 删除私聊会话 */
     removePrivateConversation(friendId: number, db: DbClient = getDb()) {
-      return this.removeConversation(ImConversationType.PRIVATE, friendId, undefined, db)
+      return enqueueConversationWrite(
+        getClientConversationId(ImConversationType.PRIVATE, friendId),
+        () => this.removeConversationNow(ImConversationType.PRIVATE, friendId, db)
+      )
     },
 
     /** 标记会话已读 */
@@ -953,6 +972,11 @@ export const useConversationStore = defineStore('imConversationStore', {
       }
       if (readMessageIdAdvanced) {
         const record = createConversationRead(type, targetId, messageId)
+        await db.transaction(['conversations', 'conversationReads'], 'readwrite', async (tx) => {
+          await this.saveConversationRecord(nextConversation, tx, db)
+          await this.saveConversationReadRecord(record, tx, db)
+        })
+        this.publishConversationProjection(nextConversation, true)
         this.conversationReads[key] = record
         return
       }

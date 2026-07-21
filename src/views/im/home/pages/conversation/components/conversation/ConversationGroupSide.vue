@@ -456,8 +456,8 @@ import { useMessage } from '@/hooks/web/useMessage'
 
 import { getCurrentUserId } from '@/utils/auth'
 import { CommonStatusEnum } from '@/utils/constants'
-import { updateGroup, muteAll, dissolveGroup } from '@/api/im/group'
-import { quitGroup, updateGroupMember } from '@/api/im/group/member'
+import { updateGroup, muteAll } from '@/api/im/group'
+import { updateGroupMember } from '@/api/im/group/member'
 import { useConversationStore } from '../../../../store/conversationStore'
 import { useGroupStore } from '../../../../store/groupStore'
 import { ImGroupMemberRole } from '@/views/im/utils/constants'
@@ -770,8 +770,7 @@ async function handleQuit() {
     return
   }
   try {
-    await quitGroup(groupId)
-    await groupStore.removeGroup(groupId)
+    await groupStore.quitGroup(groupId)
     message.success('已退出群聊')
     visible.value = false
   } catch (error) {
@@ -791,8 +790,7 @@ async function handleDissolve() {
     return
   }
   try {
-    await dissolveGroup(groupId)
-    await groupStore.removeGroup(groupId)
+    await groupStore.dissolveGroup(groupId)
     message.success('群聊已解散')
     visible.value = false
   } catch (error) {

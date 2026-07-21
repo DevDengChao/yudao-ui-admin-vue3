@@ -46,6 +46,7 @@ import { readGroupMessages as apiReadGroupMessages } from '@/api/im/message/grou
 import { readChannelMessages as apiReadChannelMessages } from '@/api/im/message/channel'
 import type { ImChannelMessageRespVO } from '@/api/im/message/channel'
 import { buildChannelConversationStub } from '../../utils/channel'
+import { getDb } from '../../utils/db'
 import type {
   WebSocketFrame,
   ImNotificationWebSocketDTO,
@@ -58,7 +59,6 @@ import type {
   Group
 } from '../types'
 
-let connectionOwner = {}
 let connectionUserId = 0
 
 /** FRIEND_DELETE 帧 payload 是否带 clear=true：clear 语义是清会话本身，跳过气泡渲染 */
@@ -219,7 +219,7 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
      * 连接 WebSocket
      * 复用 yudao 内置 /infra/ws 通道，后端通过 sendObject(type, content) 下发
      *
-     * socket 与 owner 绑定，旧连接回调不得进入新连接
+     * socket 与连接用户绑定，旧连接回调不得进入新连接
      */
     connect() {
       // 鉴权用 refreshToken（生命周期更长；access token 过期后服务端会通过 frame 通知重登）
@@ -244,7 +244,10 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
         this.disconnect()
       }
       const url = `${this.buildWsUrl()}/infra/ws?token=${refreshToken}`
-      this.socket = new WebSocket(url)
+      const socket = new WebSocket(url)
+      connectionUserId = currentUserId
+      this.socket = socket
+      const isActive = () => this.socket === socket && getCurrentUserId() === currentUserId
 
       // 连接建立：标记上线 + 启动心跳保活；重连退避计数归零
       socket.onopen = () => {
@@ -272,6 +275,7 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
       // 服务端关闭 / 网络断：标记下线，按指数退避自动重连
       socket.onclose = () => {
         if (!isActive()) return
+        this.socket = null
         this.isConnected = false
         console.log('[IM WS] disconnected')
         this.reconnect()
@@ -399,6 +403,7 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
         })
         return Promise.resolve()
       }
+      const db = getDb()
       const sendTimeMs =
         typeof websocketMessage.sendTime === 'number'
           ? websocketMessage.sendTime
@@ -425,7 +430,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
           targetId: websocketMessage.channelId,
           selfSend: false,
           materialId: websocketMessage.materialId
-        }
+        },
+        db
       )
       if (isActive) {
         // 窗口打开 = 已读：本端清未读 + 上报服务端读位置，避免读位置滞后
@@ -437,7 +443,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
         conversationStore.markConversationRead(
           ImConversationType.CHANNEL,
           websocketMessage.channelId,
-          websocketMessage.id
+          websocketMessage.id,
+          db
         )
         if (!readReported) {
           apiReadChannelMessages(websocketMessage.channelId, websocketMessage.id)
@@ -445,7 +452,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
               conversationStore.markConversationReadReported(
                 ImConversationType.CHANNEL,
                 websocketMessage.channelId,
-                websocketMessage.id
+                websocketMessage.id,
+                db
               )
             })
             .catch((e) => {
@@ -576,7 +584,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
     handlePrivateMessage(websocketMessage: ImPrivateMessageNotification): Promise<void> {
       const conversationStore = useConversationStore()
       const friendStore = useFriendStore()
-      const currentUserId = getCurrentUserId()
+      const db = getDb()
+      const currentUserId = db.userId
 
       // 0. 防御层：senderId / receiverId 均不含当前用户的私聊帧直接丢弃，避免后端路由 / 多端串号污染会话
       //    （FRIEND_* 等系统通知也走这条通道，但 fromUserId=senderId、toUserId=receiverId 仍是当前用户视角）
@@ -615,7 +624,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
         return useMessageStore().recallMessage(
           ImConversationType.PRIVATE,
           peerId,
-          websocketMessage.content
+          websocketMessage.content,
+          db
         )
       }
 
@@ -629,7 +639,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
           avatar: friend?.avatar || '',
           silent: friend?.silent
         },
-        message
+        message,
+        db
       )
 
       // 5. 仅对方消息才走「自动已读 / 提示音」分支：自己发的不会触发
@@ -649,7 +660,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
           conversationStore.markConversationRead(
             ImConversationType.PRIVATE,
             peerId,
-            websocketMessage.id
+            websocketMessage.id,
+            db
           )
           if (MESSAGE_PRIVATE_READ_ENABLED && !readReported) {
             apiReadPrivateMessages(peerId, websocketMessage.id)
@@ -657,7 +669,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
                 conversationStore.markConversationReadReported(
                   ImConversationType.PRIVATE,
                   peerId,
-                  websocketMessage.id
+                  websocketMessage.id,
+                  db
                 )
               })
               .catch((e) => {
@@ -739,7 +752,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
     handleGroupMessage(websocketMessage: ImGroupMessageNotification): Promise<void> {
       const conversationStore = useConversationStore()
       const groupStore = useGroupStore()
-      const currentUserId = getCurrentUserId()
+      const db = getDb()
+      const currentUserId = db.userId
       const selfSend = websocketMessage.senderId === currentUserId
 
       // 0. 防御层：定向群消息 receiverUserIds 非空且未包含当前用户时丢弃
@@ -768,7 +782,7 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
       // 2. 未知群时自动拉群详情 + 成员（被拉入群但还没收到 GROUP_CREATE 时的兜底）
       const group = groupStore.getGroup(websocketMessage.groupId)
       if (!group) {
-        groupStore.fetchGroupInfo(websocketMessage.groupId, true).catch(() => undefined)
+        groupStore.fetchGroupInfo(websocketMessage.groupId, true, db).catch(() => undefined)
       }
 
       // 3. 后端撤回：下发一条 RECALL 消息，content 为 `{"messageId": xxx}`
@@ -777,7 +791,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
         return useMessageStore().recallMessage(
           ImConversationType.GROUP,
           websocketMessage.groupId,
-          websocketMessage.content
+          websocketMessage.content,
+          db
         )
       }
 
@@ -791,7 +806,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
           avatar: group?.avatar || '',
           silent: group?.silent
         },
-        message
+        message,
+        db
       )
 
       // 5. 仅对方消息才走「自动已读 / 提示音」（与私聊对称）
@@ -813,7 +829,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
           conversationStore.markConversationRead(
             ImConversationType.GROUP,
             websocketMessage.groupId,
-            websocketMessage.id
+            websocketMessage.id,
+            db
           )
           if (MESSAGE_GROUP_READ_ENABLED && !readReported) {
             apiReadGroupMessages(websocketMessage.groupId, websocketMessage.id)
@@ -821,7 +838,8 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
                 conversationStore.markConversationReadReported(
                   ImConversationType.GROUP,
                   websocketMessage.groupId,
-                  websocketMessage.id
+                  websocketMessage.id,
+                  db
                 )
               })
               .catch((e) => {
@@ -1028,7 +1046,6 @@ export const useImWebSocketStore = defineStore('imWebSocketStore', {
 
     /** 主动断开（切换用户 / 退出登录时用）：关 socket + 停心跳 + 取消待重连 */
     disconnect() {
-      connectionOwner = {}
       connectionUserId = 0
       if (this.socket) {
         // close() 异步触发 onclose / onerror，回调里会无条件 reconnect；

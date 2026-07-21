@@ -69,7 +69,6 @@ export const StorageKeys = {
 } as const
 
 let currentDb: IDBDatabase | null = null
-let currentUserId = 0
 let currentClient: DbClient | null = null
 let initialization:
   | {
@@ -183,8 +182,8 @@ export async function initDb(): Promise<DbClient> {
   if (!Number.isFinite(userId) || userId <= 0) {
     throw new Error('当前用户不存在，无法初始化 IM DB')
   }
-  if (currentDb && currentUserId === userId) {
-    return currentClient!
+  if (currentClient?.userId === userId) {
+    return currentClient
   }
   if (initialization?.userId === userId) {
     return initialization.promise
@@ -195,17 +194,13 @@ export async function initDb(): Promise<DbClient> {
   }
   const promise = (async () => {
     const nextDb = await openDb(getDbName(userId))
-    if (
-      initialization?.promise !== nextInitialization.promise ||
-      getCurrentUserId() !== userId
-    ) {
+    if (initialization?.promise !== nextInitialization.promise || getCurrentUserId() !== userId) {
       nextDb.close()
       throw new Error('IM DB 初始化已失效')
     }
     const nextClient = new DbClient(nextDb, userId)
     currentDb?.close()
     currentDb = nextDb
-    currentUserId = userId
     currentClient = nextClient
     return nextClient
   })()
@@ -225,7 +220,6 @@ export function closeDb(): Promise<void> {
   initialization = undefined
   currentDb?.close()
   currentDb = null
-  currentUserId = 0
   currentClient = null
   return Promise.resolve()
 }

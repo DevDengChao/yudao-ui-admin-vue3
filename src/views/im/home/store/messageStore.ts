@@ -41,7 +41,7 @@ import {
 } from '../../utils/messageSync'
 import { useGroupStore } from './groupStore'
 import { useConversationStore } from './conversationStore'
-import type { Conversation, Message, MessageDO } from '../types'
+import type { Conversation, ConversationDO, Message, MessageDO } from '../types'
 
 const MESSAGE_CACHE_RECENT_CONVERSATION_LIMIT = 5
 const MESSAGE_CACHE_RETAIN_CONVERSATION_LIMIT = MESSAGE_CACHE_RECENT_CONVERSATION_LIMIT + 1
@@ -255,10 +255,17 @@ function buildMessageFromDO(message: MessageDO): Message {
   return rest
 }
 
+/** IndexedDB 会话记录转前端会话 */
+function buildConversationFromDO(conversation: ConversationDO): Conversation {
+  const { clientConversationId: _clientConversationId, ...rest } = conversation
+  return rest
+}
+
 /** 算出末条消息的发送人快照 */
 function deriveLastSenderDisplayName(
   conversation: Conversation,
-  senderId: number
+  senderId: number,
+  db: DbClient
 ): string | undefined {
   // 1. 优先使用当前内存中的好友 / 群成员信息
   const liveSenderName = tryGetSenderDisplayName(senderId, conversation.type, conversation.targetId)
@@ -275,7 +282,7 @@ function deriveLastSenderDisplayName(
     const fetchPromise =
       group?.membersLoaded && !group.membersExpired
         ? groupStore.fetchGroupMember(conversation.targetId, senderId)
-        : groupStore.fetchGroupMemberList(conversation.targetId, false)
+        : groupStore.fetchGroupMemberList(conversation.targetId, false, db)
     fetchPromise.catch((e) =>
       console.warn(
         '[IM messageStore] 兜底拉群成员失败',
@@ -288,8 +295,12 @@ function deriveLastSenderDisplayName(
 }
 
 /** 按消息更新会话摘要 */
-function applyConversationSummary(conversation: Conversation, message: Message): void {
-  const senderDisplayName = deriveLastSenderDisplayName(conversation, message.senderId)
+function applyConversationSummary(
+  conversation: Conversation,
+  message: Message,
+  db: DbClient
+): void {
+  const senderDisplayName = deriveLastSenderDisplayName(conversation, message.senderId, db)
   conversation.lastContent = resolveConversationLastContent(
     message,
     conversation.type,
@@ -307,11 +318,41 @@ function applyConversationSummary(conversation: Conversation, message: Message):
   conversation.lastSenderDisplayName = senderDisplayName
 }
 
+/** 判断消息是否可以推进当前会话摘要 */
+function shouldUpdateConversationSummary(conversation: Conversation, message: Message): boolean {
+  if (message.id !== undefined && conversation.lastMessageId !== undefined) {
+    return message.id >= conversation.lastMessageId
+  }
+  return (
+    (!!message.clientMessageId && message.clientMessageId === conversation.lastClientMessageId) ||
+    (message.sendTime || 0) > (conversation.lastSendTime || 0)
+  )
+}
+
+/** 会话摘要顺序：服务端消息按 id，混合本地消息时按发送时间 */
+function compareConversationSummaryOrder(
+  left: Pick<Message, 'id' | 'clientMessageId' | 'sendTime'>,
+  right: Pick<Message, 'id' | 'clientMessageId' | 'sendTime'>
+): number {
+  if (left.id && right.id) {
+    return left.id - right.id
+  }
+  return (
+    (left.sendTime || 0) - (right.sendTime || 0) ||
+    Number(!!left.id) - Number(!!right.id) ||
+    left.clientMessageId.localeCompare(right.clientMessageId)
+  )
+}
+
 /** 按末条消息重算会话摘要 */
-function recomputeConversationLast(conversation: Conversation, messages: Message[]): void {
+function recomputeConversationLast(
+  conversation: Conversation,
+  messages: Message[],
+  db: DbClient
+): void {
   const last = messages[messages.length - 1]
   if (last) {
-    applyConversationSummary(conversation, last)
+    applyConversationSummary(conversation, last, db)
     return
   }
   conversation.lastContent = ''
@@ -711,7 +752,7 @@ export const useMessageStore = defineStore('imMessageStore', {
         db.userId
       )
       if (conversation.lastMessageId === messageId) {
-        applyConversationSummary(conversation, recalledMessage)
+        applyConversationSummary(conversation, recalledMessage, db)
       }
       return { conversation, message: recalledMessage, cachedMessage } as RecallMessageProjection
     },
@@ -869,7 +910,21 @@ export const useMessageStore = defineStore('imMessageStore', {
           !conversationStore.isMessageCoveredByReadPosition(conversation, message) &&
           isNormalMessage(message.type) &&
           message.status !== ImMessageStatus.RECALL
-        const existingIndex = messages.findIndex((existing) => isSameMessage(existing, message))
+        let existingIndex = messages.findIndex((existing) => isSameMessage(existing, message))
+        if (existingIndex < 0 && message.id) {
+          const messageId = message.id
+          const storedMessage = await db.get<MessageDO>(
+            'messages',
+            getServerMessageKey(conversationInfo.type, messageId)
+          )
+          if (storedMessage) {
+            existingIndex = messages.findIndex((existing) => existing.id && messageId < existing.id)
+            if (existingIndex < 0) {
+              existingIndex = messages.length
+            }
+            messages.splice(existingIndex, 0, buildMessageFromDO(storedMessage))
+          }
+        }
         if (existingIndex >= 0) {
           // 1.3 已存在消息合并服务端状态
           const existing = messages[existingIndex]
@@ -880,8 +935,12 @@ export const useMessageStore = defineStore('imMessageStore', {
           if (reduced.value === message) {
             messages[existingIndex] = buildServerMessageProjection(existing, message)
           }
-          if (existingIndex === messages.length - 1) {
-            recomputeConversationLast(conversation, messages)
+          const mergedMessage = messages[existingIndex]
+          if (
+            existingIndex === messages.length - 1 &&
+            shouldUpdateConversationSummary(conversation, mergedMessage)
+          ) {
+            recomputeConversationLast(conversation, messages, db)
           }
           if (isUnread) {
             syncConversationAtFlags(conversation, message, db.userId)
@@ -893,7 +952,9 @@ export const useMessageStore = defineStore('imMessageStore', {
         }
 
         // 1.4 新消息更新会话摘要和未读状态
-        applyConversationSummary(conversation, message)
+        if (shouldUpdateConversationSummary(conversation, message)) {
+          applyConversationSummary(conversation, message, db)
+        }
         if (isUnread) {
           syncConversationAtFlags(conversation, message, db.userId)
           conversation.unreadCount++
@@ -917,40 +978,65 @@ export const useMessageStore = defineStore('imMessageStore', {
       }
 
       // 2. 单事务写入消息、会话摘要和游标
-      await getDb().transaction(
-        ['messages', 'conversations', 'settings'],
-        'readwrite',
-        async (tx) => {
-          // 2.1 写入本批变更消息
-          for (const item of persistedMessages.values()) {
-            await this.saveMessageRecord(item.message, item.conversationType, tx, {
+      await db.transaction(['messages', 'conversations', 'settings'], 'readwrite', async (tx) => {
+        // 2.1 写入本批变更消息
+        for (const item of persistedMessages.values()) {
+          await this.saveMessageRecord(
+            item.message,
+            item.conversationType,
+            tx,
+            {
               mergeClientRecord: item.mergeClientRecord
-            })
-          }
-          // 2.2 应用本批撤回信号
-          for (const recallMessage of recallMessages) {
-            const changed = await this.applyRecallMessageRecord(
-              recallMessage.conversationType,
-              recallMessage.targetId,
-              recallMessage.recallSignalContent,
-              tx
-            )
-            if (changed) {
-              changedConversations.set(
-                getClientConversationId(
-                  changed.conversation.type,
-                  changed.conversation.targetId
-                ),
-                changed.conversation
-              )
-            }
-          }
-          // 2.3 写入本批变更会话
-          await conversationStore.saveConversationRecord([...changedConversations.values()], tx)
-          // 2.4 写入本批游标
-          await setMessageMaxId(conversationType, maxMessageId, tx)
+            },
+            db
+          )
         }
-      )
+        // 2.2 应用本批撤回信号
+        for (const recallMessage of recallMessages) {
+          const staged = conversationProjections.get(
+            getClientConversationId(recallMessage.conversationType, recallMessage.targetId)
+          )
+          const changed = await this.applyRecallMessageRecord(
+            recallMessage.conversationType,
+            recallMessage.targetId,
+            recallMessage.recallSignalContent,
+            tx,
+            staged
+              ? { conversation: staged.conversation, messages: staged.nextMessages }
+              : undefined,
+            db
+          )
+          if (changed) {
+            const clientConversationId = getClientConversationId(
+              changed.conversation.type,
+              changed.conversation.targetId
+            )
+            let projection = conversationProjections.get(clientConversationId)
+            if (!projection) {
+              const currentMessages = this.messagesByConversation[clientConversationId] || []
+              projection = {
+                conversation: changed.conversation,
+                currentMessages,
+                nextMessages: [...currentMessages]
+              }
+              conversationProjections.set(clientConversationId, projection)
+            } else {
+              projection.conversation = changed.conversation
+            }
+            const recalledIndex = projection.nextMessages.findIndex(
+              (message) => message.id === changed.message.id
+            )
+            if (recalledIndex >= 0) {
+              projection.nextMessages[recalledIndex] = changed.message
+            }
+            changedConversations.set(clientConversationId, changed.conversation)
+          }
+        }
+        // 2.3 写入本批变更会话
+        await conversationStore.saveConversationRecord([...changedConversations.values()], tx, db)
+        // 2.4 写入本批游标
+        await setMessageMaxId(conversationType, maxMessageId, tx, db)
+      })
       // 3. 持久化成功后推进内存游标
       for (const [clientConversationId, projection] of conversationProjections) {
         for (const current of projection.currentMessages) {
@@ -1035,16 +1121,31 @@ export const useMessageStore = defineStore('imMessageStore', {
       const conversation = conversationStore.buildConversationProjection(conversationInfo)
       const currentMessages = this.messagesByConversation[clientConversationId] || []
       const messages = [...currentMessages]
+      let existingIndex = messages.findIndex((item) => isSameMessage(item, message))
+      if (existingIndex < 0 && message.id) {
+        const messageId = message.id
+        const storedMessage = await db.get<MessageDO>(
+          'messages',
+          getServerMessageKey(conversationInfo.type, messageId)
+        )
+        if (storedMessage) {
+          existingIndex = messages.findIndex((existing) => existing.id && messageId < existing.id)
+          if (existingIndex < 0) {
+            existingIndex = messages.length
+          }
+          messages.splice(existingIndex, 0, buildMessageFromDO(storedMessage))
+        }
+      }
       const isActive =
         conversationStore.activeConversation?.type === conversationInfo.type &&
         conversationStore.activeConversation?.targetId === conversationInfo.targetId
       const isUnread =
+        existingIndex < 0 &&
         !message.selfSend &&
         !isActive &&
         !conversationStore.isMessageCoveredByReadPosition(conversation, message) &&
         isNormalMessage(message.type) &&
         message.status !== ImMessageStatus.RECALL
-      const existingIndex = messages.findIndex((item) => isSameMessage(item, message))
       // 3. 已存在消息走覆盖更新
       if (existingIndex >= 0) {
         const existing = messages[existingIndex]
@@ -1055,28 +1156,34 @@ export const useMessageStore = defineStore('imMessageStore', {
         if (reduced.value === message) {
           messages[existingIndex] = buildServerMessageProjection(existing, message)
         }
-        if (existingIndex === messages.length - 1) {
-          recomputeConversationLast(conversation, messages)
+        if (
+          existingIndex === messages.length - 1 &&
+          shouldUpdateConversationSummary(conversation, messages[existingIndex])
+        ) {
+          recomputeConversationLast(conversation, messages, db)
         }
         if (isUnread) {
           syncConversationAtFlags(conversation, message, db.userId)
         }
-        return getDb()
-          .transaction(['messages', 'conversations', 'settings'], 'readwrite', async (tx) => {
-            await this.saveMessageRecord(messages[existingIndex], conversationInfo.type, tx, {
-              mergeClientRecord: hasIncomingClientMessageId
-            })
-            await conversationStore.saveConversationRecord(conversation, tx)
-            if (options?.saveMaxId !== false) {
-              await setMessageMaxId(conversationInfo.type, message.id, tx)
-            }
+        await db
+          .transaction(['messages', 'conversations'], 'readwrite', async (tx) => {
+            await this.saveMessageRecord(
+              messages[existingIndex],
+              conversationInfo.type,
+              tx,
+              {
+                mergeClientRecord: hasIncomingClientMessageId
+              },
+              db
+            )
+            await conversationStore.saveConversationRecord(conversation, tx, db)
           })
           .catch((e) => {
             console.error('[IM messageStore] 消息写入失败', e)
             throw e
           })
-        const currentMessage = currentMessages[existingIndex]
-        if (currentMessage?.content !== messages[existingIndex].content) {
+        const currentMessage = currentMessages.find((item) => isSameMessage(item, message))
+        if (currentMessage && currentMessage.content !== messages[existingIndex].content) {
           revokeBlobUrlsInContent(currentMessage.content)
         }
         this.messagesByConversation[clientConversationId] = messages
@@ -1086,7 +1193,9 @@ export const useMessageStore = defineStore('imMessageStore', {
       }
 
       // 4. 新消息更新会话摘要和未读状态
-      applyConversationSummary(conversation, message)
+      if (shouldUpdateConversationSummary(conversation, message)) {
+        applyConversationSummary(conversation, message, db)
+      }
       if (isUnread) {
         syncConversationAtFlags(conversation, message, db.userId)
         conversation.unreadCount++
@@ -1104,16 +1213,19 @@ export const useMessageStore = defineStore('imMessageStore', {
         }
       }
       messages.splice(insertIndex, 0, message)
-      // 6. 单事务写入消息、会话摘要和游标
-      return getDb()
-        .transaction(['messages', 'conversations', 'settings'], 'readwrite', async (tx) => {
-          await this.saveMessageRecord(message, conversationInfo.type, tx, {
-            mergeClientRecord: hasIncomingClientMessageId && !!message.id
-          })
-          await conversationStore.saveConversationRecord(conversation, tx)
-          if (options?.saveMaxId !== false) {
-            await setMessageMaxId(conversationInfo.type, message.id, tx)
-          }
+      // 6. 单事务写入消息和会话摘要
+      await db
+        .transaction(['messages', 'conversations'], 'readwrite', async (tx) => {
+          await this.saveMessageRecord(
+            message,
+            conversationInfo.type,
+            tx,
+            {
+              mergeClientRecord: hasIncomingClientMessageId && !!message.id
+            },
+            db
+          )
+          await conversationStore.saveConversationRecord(conversation, tx, db)
         })
         .catch((e) => {
           console.error('[IM messageStore] 消息写入失败', e)
@@ -1173,22 +1285,25 @@ export const useMessageStore = defineStore('imMessageStore', {
       updates: Partial<Message>,
       db: DbClient = getDb()
     ) {
-      // 1. 定位待合并消息
+      // 1. 从任务绑定的 DB 读取待合并消息和会话，避免内存窗口淘汰后丢 ACK
       const conversationStore = useConversationStore()
-      const conversation = conversationStore.getConversation(conversationType, targetId)
-      if (!conversation) {
-        return
-      }
       const clientConversationId = getClientConversationId(conversationType, targetId)
-      const messages = this.messagesByConversation[clientConversationId]
-      if (!messages) {
+      const currentConversation = conversationStore.getConversation(conversationType, targetId)
+      const currentMessages = this.messagesByConversation[clientConversationId]
+      const currentMessage = currentMessages?.find(
+        (item) => item.clientMessageId === clientMessageId
+      )
+      const [storedMessage, storedConversation] = await Promise.all([
+        db.getByIndex<MessageDO>('messages', 'clientMessageId', clientMessageId),
+        db.get<ConversationDO>('conversations', clientConversationId)
+      ])
+      if (!storedMessage) {
         return
       }
-      const message = messages.find((item) => item.clientMessageId === clientMessageId)
-      if (!message) {
-        return
+      const message = buildMessageFromDO(storedMessage)
+      if (currentMessage) {
+        currentMessage._ackMerging = true
       }
-      message._ackMerging = true
       try {
         // 2. 构建服务端 ack 的下一份投影
         const incoming = { ...message, ...updates }
@@ -1207,29 +1322,55 @@ export const useMessageStore = defineStore('imMessageStore', {
           nextMessage = buildServerMessageProjection(message, nonTerminalUpdates)
         }
         nextMessage._ackMerging = undefined
-        const nextConversation = { ...conversation }
-        const nextMessages = messages.map((item) => (item === message ? nextMessage : item))
-        if (messages[messages.length - 1] === message) {
-          recomputeConversationLast(nextConversation, nextMessages)
+        const nextConversation = storedConversation
+          ? buildConversationFromDO(storedConversation)
+          : undefined
+        if (
+          nextConversation &&
+          (nextConversation.lastClientMessageId === clientMessageId ||
+            (!!message.id && nextConversation.lastMessageId === message.id))
+        ) {
+          applyConversationSummary(nextConversation, nextMessage, db)
         }
-        // 3. 单事务写入消息、会话摘要和游标
-        await getDb()
-          .transaction(['messages', 'conversations', 'settings'], 'readwrite', async (tx) => {
-            await this.saveMessageRecord(message, conversationType, tx, {
-              mergeClientRecord: true
-            })
-            await conversationStore.saveConversationRecord(conversation, tx)
-            await setMessageMaxId(conversationType, message.id, tx)
+        // 3. 单事务写入消息和会话摘要；ACK 不推进 pull cursor
+        await db
+          .transaction(['messages', 'conversations'], 'readwrite', async (tx) => {
+            await this.saveMessageRecord(
+              nextMessage,
+              conversationType,
+              tx,
+              {
+                mergeClientRecord: true
+              },
+              db
+            )
+            if (nextConversation) {
+              await conversationStore.saveConversationRecord(nextConversation, tx, db)
+            }
           })
           .catch((e) => {
             console.error('[IM messageStore] ack 写入失败', e)
             throw e
           })
-        applyServerMessageUpdate(message, nextMessage)
-        conversationStore.publishConversationProjection(nextConversation, true)
+        // 4. 仅更新仍由当前 Store 持有的旧投影；DB-only ACK 不重新撑开 LRU 窗口
+        if (
+          currentMessage &&
+          currentMessages &&
+          this.messagesByConversation[clientConversationId] === currentMessages
+        ) {
+          applyServerMessageUpdate(currentMessage, nextMessage)
+        }
+        if (
+          nextConversation &&
+          currentConversation &&
+          conversationStore.getConversation(conversationType, targetId) === currentConversation
+        ) {
+          conversationStore.publishConversationProjection(nextConversation, true)
+        }
       } finally {
-        // 4. 清理合并标记
-        message._ackMerging = false
+        if (currentMessage) {
+          currentMessage._ackMerging = false
+        }
       }
     },
 
@@ -1350,6 +1491,7 @@ export const useMessageStore = defineStore('imMessageStore', {
       )
       const messages = this.messagesByConversation[clientConversationId] || []
       const changed: Array<{ current: Message; next: Message }> = []
+      const storedChanges: MessageDO[] = []
       // 1. 私聊回执批量更新自己发送的消息
       if (options.conversationType === ImConversationType.PRIVATE && options.privateReadMaxId) {
         messages.forEach((message) => {
@@ -1365,6 +1507,25 @@ export const useMessageStore = defineStore('imMessageStore', {
             })
           }
         })
+        const storedMessages = await db.getAllByIndex<MessageDO>(
+          'messages',
+          'clientConversationId',
+          clientConversationId
+        )
+        storedChanges.push(
+          ...storedMessages
+            .filter(
+              (message) =>
+                message.selfSend &&
+                !!message.id &&
+                message.id <= options.privateReadMaxId! &&
+                message.receiptStatus === ImMessageReceiptStatus.PENDING
+            )
+            .map((message) => ({
+              ...message,
+              receiptStatus: ImMessageReceiptStatus.DONE
+            }))
+        )
       } else if (options.conversationType === ImConversationType.GROUP && options.groupMessageId) {
         // 2. 群聊回执更新单条消息
         const message = messages.find((item) => item.id === options.groupMessageId)
@@ -1381,8 +1542,45 @@ export const useMessageStore = defineStore('imMessageStore', {
           }
           changed.push({ current: message, next })
         }
+        const storedMessage = await db.get<MessageDO>(
+          'messages',
+          getServerMessageKey(options.conversationType, options.groupMessageId)
+        )
+        if (storedMessage) {
+          const cachedChange = changed[0]
+          if (cachedChange) {
+            if (storedMessage.readCount !== undefined) {
+              cachedChange.next.readCount = Math.max(
+                cachedChange.next.readCount ?? storedMessage.readCount,
+                storedMessage.readCount
+              )
+            }
+            if (storedMessage.receiptStatus !== undefined) {
+              cachedChange.next.receiptStatus = Math.max(
+                cachedChange.next.receiptStatus ?? storedMessage.receiptStatus,
+                storedMessage.receiptStatus
+              )
+            }
+          }
+          const next = { ...storedMessage }
+          if (options.readCount !== undefined) {
+            next.readCount = Math.max(storedMessage.readCount ?? 0, options.readCount)
+          }
+          if (options.receiptStatus !== undefined) {
+            next.receiptStatus = Math.max(
+              storedMessage.receiptStatus ?? options.receiptStatus,
+              options.receiptStatus
+            )
+          }
+          if (
+            next.readCount !== storedMessage.readCount ||
+            next.receiptStatus !== storedMessage.receiptStatus
+          ) {
+            storedChanges.push(next)
+          }
+        }
       }
-      if (changed.length === 0) {
+      if (changed.length === 0 && storedChanges.length === 0) {
         if (options.conversationType === ImConversationType.PRIVATE) {
           this.updatePrivateReadMaxId(options.targetId, options.privateReadMaxId)
         }
@@ -1391,6 +1589,9 @@ export const useMessageStore = defineStore('imMessageStore', {
       // 3. 单事务写入变更消息
       await db
         .transaction(['messages'], 'readwrite', async (tx) => {
+          for (const message of storedChanges) {
+            await db.put('messages', message, tx)
+          }
           for (const item of changed) {
             await this.saveMessageRecord(item.next, options.conversationType, tx, undefined, db)
           }
@@ -1498,8 +1699,36 @@ export const useMessageStore = defineStore('imMessageStore', {
       if (index < 0) {
         return
       }
-      // 2. 从内存移除消息
-      const [removed] = messages.splice(index, 1)
+      const removed = messages[index]
+      const clientConversationId = getClientConversationId(conversationType, targetId)
+      let nextMessages = messages.filter((_, messageIndex) => messageIndex !== index)
+      const nextConversation = { ...conversation }
+      // 2. 先持久化 delete key，再删除消息并保存会话摘要
+      await db.transaction(['messages', 'conversations', 'settings'], 'readwrite', async (tx) => {
+        const settingKey = `${StorageKeys.settings.conversationDeletedMessagesPrefix}${clientConversationId}`
+        const oldKeys = (await db.getSetting<string[]>(settingKey, tx)) || []
+        const deletedKeys = [
+          ...(removed.id ? [`id:${removed.id}`] : []),
+          ...(removed.clientMessageId ? [`client:${removed.clientMessageId}`] : [])
+        ]
+        await db.setSetting(settingKey, Array.from(new Set([...oldKeys, ...deletedKeys])), tx)
+        await db.delete('messages', getMessageKey(removed, conversationType), tx)
+        if (index === nextMessages.length) {
+          if (nextMessages.length === 0) {
+            const storedMessages = await db.getAllByIndex<MessageDO>(
+              'messages',
+              'clientConversationId',
+              clientConversationId,
+              tx
+            )
+            const latest = storedMessages.sort(compareConversationSummaryOrder).at(-1)
+            nextMessages = latest ? [buildMessageFromDO(latest)] : []
+          }
+          recomputeConversationLast(nextConversation, nextMessages, db)
+        }
+        await conversationStore.saveConversationRecord(nextConversation, tx, db)
+      })
+      // 3. 事务提交后发布内存投影
       revokeBlobUrlsInContent(removed.content)
       this.messagesByConversation[clientConversationId] = nextMessages
       conversationStore.publishConversationProjection(nextConversation, true)

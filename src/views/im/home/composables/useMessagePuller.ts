@@ -37,7 +37,6 @@ import { generateClientMessageId, getPrivateMessagePeerId } from '../../utils/me
 import { runMinIdPull } from '../../utils/pull'
 import { initDb, type DbClient } from '../../utils/db'
 import type { Message } from '../types'
-import { getCurrentUserId } from '@/utils/auth'
 
 /** 三类消息 pull 接口返回的原始 VO 联合类型；runMinIdPull 只需 id 推进游标，具体分发在 applyPage 内按类型 cast */
 type PulledRawMessage = ImPrivateMessageRespVO | ImGroupMessageRespVO | ImChannelMessageRespVO
@@ -73,12 +72,14 @@ export const useMessagePuller = () => {
   }
 
   /** 私聊会话归属：自己发的算发给 receiverId 的会话，否则算发送方的会话 */
-  const getPrivatePeerId = (message: ImPrivateMessageRespVO) =>
-    getPrivateMessagePeerId(message, getCurrentUserId())
+  const getPrivatePeerId = (message: ImPrivateMessageRespVO, currentUserId: number) =>
+    getPrivateMessagePeerId(message, currentUserId)
 
   /** 服务端私聊消息 -> 本地 Message：targetId 是会话主键（对端 userId） */
-  const convertPrivateMessage = (message: ImPrivateMessageRespVO): Message => {
-    const currentUserId = getCurrentUserId()
+  const convertPrivateMessage = (
+    message: ImPrivateMessageRespVO,
+    currentUserId: number
+  ): Message => {
     return {
       id: message.id,
       clientMessageId: message.clientMessageId || generateClientMessageId(),
@@ -88,14 +89,13 @@ export const useMessagePuller = () => {
       receiptStatus: message.receiptStatus,
       sendTime: new Date(message.sendTime).getTime(),
       senderId: message.senderId,
-      targetId: getPrivatePeerId(message),
+      targetId: getPrivatePeerId(message, currentUserId),
       selfSend: message.senderId === currentUserId
     }
   }
 
   /** 服务端群聊消息 -> 本地 Message */
-  const convertGroupMessage = (message: ImGroupMessageRespVO): Message => {
-    const currentUserId = getCurrentUserId()
+  const convertGroupMessage = (message: ImGroupMessageRespVO, currentUserId: number): Message => {
     return {
       id: message.id,
       clientMessageId: message.clientMessageId || generateClientMessageId(),
@@ -135,8 +135,8 @@ export const useMessagePuller = () => {
     buildChannelConversationStub(message.channelId)
 
   /** 私聊：会话归属到对端 userId */
-  const convertPrivateConversation = (message: ImPrivateMessageRespVO) => {
-    const targetId = getPrivatePeerId(message)
+  const convertPrivateConversation = (message: ImPrivateMessageRespVO, currentUserId: number) => {
+    const targetId = getPrivatePeerId(message, currentUserId)
     const friend = friendStore.getFriend(targetId)
     return {
       type: ImConversationType.PRIVATE,
@@ -211,7 +211,7 @@ export const useMessagePuller = () => {
               pulledMessages.push({
                 kind: 'recall',
                 conversationType: ImConversationType.PRIVATE,
-                targetId: getPrivatePeerId(message),
+                targetId: getPrivatePeerId(message, db.userId),
                 recallSignalContent: message.content
               })
               continue
@@ -226,8 +226,8 @@ export const useMessagePuller = () => {
             // 其它消息正常入会话消息列表
             pulledMessages.push({
               kind: 'insert',
-              conversationInfo: convertPrivateConversation(message),
-              message: convertPrivateMessage(message)
+              conversationInfo: convertPrivateConversation(message, db.userId),
+              message: convertPrivateMessage(message, db.userId)
             })
           } else {
             const message = raw as ImGroupMessageRespVO
@@ -244,17 +244,12 @@ export const useMessagePuller = () => {
             pulledMessages.push({
               kind: 'insert',
               conversationInfo: convertGroupConversation(message),
-              message: convertGroupMessage(message)
+              message: convertGroupMessage(message, db.userId)
             })
           }
         }
         // 入库 + 推进 messageMaxId；nextMinId 为空（本批无有效 id）时不推进游标，与旧逻辑一致
-        await messageStore.applyPulledMessageList(
-          pulledMessages,
-          conversationType,
-          nextMinId,
-          db
-        )
+        await messageStore.applyPulledMessageList(pulledMessages, conversationType, nextMinId, db)
       }
     })
   }
@@ -410,11 +405,14 @@ export const useMessagePuller = () => {
             }
             messageStore.updatePrivateReadMaxId(active.targetId, maxReadId)
             if (maxReadId) {
-              await messageStore.applyMessageReadReceipt({
-                conversationType: ImConversationType.PRIVATE,
-                targetId: active.targetId,
-                privateReadMaxId: maxReadId
-              })
+              await messageStore.applyMessageReadReceipt(
+                {
+                  conversationType: ImConversationType.PRIVATE,
+                  targetId: active.targetId,
+                  privateReadMaxId: maxReadId
+                },
+                db
+              )
             }
           } catch (e) {
             if (isAbortError(e)) {
